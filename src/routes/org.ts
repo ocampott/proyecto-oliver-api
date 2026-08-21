@@ -17,7 +17,7 @@ orgRouter.get("/org/current", requireAuth, async (req, res) => {
     });
     return;
   }
-  const entitlements = await getEntitlements(org.id, req.user!.id);
+  const entitlements = await getEntitlements(req, org);
   res.json({ ...org, plan: entitlements.plan.slug, entitlements });
 });
 

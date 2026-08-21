@@ -1,6 +1,7 @@
 import express, { type Request, type Response, type NextFunction } from "express";
 import cors from "cors";
 import cookieParser from "cookie-parser";
+import compression from "compression";
 import { env } from "./env.js";
 import { meRouter } from "./routes/me.js";
 import { orgRouter } from "./routes/org.js";
@@ -17,6 +18,7 @@ import { placesRouter } from "./routes/places.js";
 
 const app = express();
 
+app.use(compression());
 app.use(
   cors({
     origin: env.corsOrigin,

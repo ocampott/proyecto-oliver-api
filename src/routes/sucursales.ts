@@ -51,7 +51,7 @@ sucursalesRouter.post(
       return;
     }
 
-    const ent = await getEntitlements(req.org!.id, req.user!.id);
+    const ent = await getEntitlements(req, req.org!);
     try {
       const sucursal = await createSucursalConLimite(
         req.org!.id,
@@ -86,7 +86,7 @@ sucursalesRouter.patch(
     if (body.direccion !== undefined) patch.direccion = body.direccion;
 
     if (body.activa === true) {
-      const ent = await getEntitlements(req.org!.id, req.user!.id);
+      const ent = await getEntitlements(req, req.org!);
       let reactivada;
       try {
         reactivada = await reactivarSucursalConLimite(req.org!.id, id, ent.maxSucursales);

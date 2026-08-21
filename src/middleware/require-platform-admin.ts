@@ -1,5 +1,5 @@
 import type { Request, Response, NextFunction } from "express";
-import { isPlatformAdmin } from "../lib/admin.js";
+import { checkPlatformAdmin } from "../lib/admin.js";
 
 export async function requirePlatformAdmin(req: Request, res: Response, next: NextFunction): Promise<void> {
   if (!req.user) {
@@ -7,7 +7,7 @@ export async function requirePlatformAdmin(req: Request, res: Response, next: Ne
     return;
   }
 
-  const isAdmin = await isPlatformAdmin(req.user.id);
+  const isAdmin = await checkPlatformAdmin(req);
   if (!isAdmin) {
     res.status(403).json({ error: "No autorizado" });
     return;

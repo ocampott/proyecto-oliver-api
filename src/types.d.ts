@@ -6,6 +6,13 @@ declare global {
     interface Request {
       user?: User;
       org?: Organization;
+      /**
+       * Cache por-request de isPlatformAdmin (ver lib/admin.ts) — evita
+       * repetir la consulta a platform_admins cuando varios middlewares
+       * (requireModulo, requireRole) o el handler la necesitan en el
+       * mismo request.
+       */
+      isPlatformAdmin?: boolean;
     }
   }
 }

@@ -1,5 +1,5 @@
 import { createServiceClient } from "./supabase-service.js";
-import { isPlatformAdmin } from "./admin.js";
+import { checkPlatformAdmin, type ReqAuthCache } from "./admin.js";
 
 export type PlanSlug = "gratis" | "basico" | "pro";
 
@@ -161,25 +161,18 @@ interface SuscripcionRow {
 }
 
 /**
- * userId es opcional solo por compatibilidad con quien todavía no lo pase —
- * pero todo call site nuevo DEBE pasarlo: es lo que permite detectar
- * platform_admins y devolverles acceso ilimitado sin importar el plan de
- * la organización.
+ * Recibe req (para el chequeo cacheado de platform_admin — ver
+ * checkPlatformAdmin en lib/admin.ts) y el org ya resuelto (requireOrg /
+ * getCurrentOrg ya lo trajeron con su plan cacheado, así que no hace
+ * falta volver a pegarle a organizations acá).
  */
-export async function getEntitlements(orgId: string, userId?: string): Promise<Entitlements> {
-  if (userId && (await isPlatformAdmin(userId))) {
+export async function getEntitlements(req: ReqAuthCache, org: { id: string; plan: string }): Promise<Entitlements> {
+  if (await checkPlatformAdmin(req)) {
     return ENTITLEMENTS_SUPERADMIN;
   }
 
   const service = createServiceClient();
-
-  const { data: org, error: orgErr } = await service
-    .from("organizations")
-    .select("plan")
-    .eq("id", orgId)
-    .single();
-  if (orgErr) throw orgErr;
-
+  const orgId = org.id;
   const planCacheado = (org.plan as PlanSlug) ?? "gratis";
 
   const { data: activa, error: subErr } = await service

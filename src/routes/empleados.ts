@@ -53,7 +53,7 @@ empleadosRouter.post(
       return;
     }
 
-    const ent = await getEntitlements(req.org!.id, req.user!.id);
+    const ent = await getEntitlements(req, req.org!);
     try {
       const empleado = await createEmpleadoConLimite(
         req.org!.id,
@@ -82,7 +82,7 @@ empleadosRouter.patch(
 
     if (typeof body.activo === "boolean") {
       if (body.activo) {
-        const ent = await getEntitlements(req.org!.id, req.user!.id);
+        const ent = await getEntitlements(req, req.org!);
         try {
           await reactivarEmpleadoConLimite(req.org!.id, id, ent.maxEmpleados);
         } catch (e) {

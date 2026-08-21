@@ -27,22 +27,27 @@ export async function getOrgBySlug(slug: string): Promise<Organization | null> {
   return data;
 }
 
+interface MembershipConOrg {
+  role: OrgRole;
+  organizations: { id: string; name: string; slug: string; plan: string } | null;
+}
+
+/**
+ * Se llama en prácticamente todos los requests autenticados (vía
+ * requireOrg), así que va con un solo round trip: PostgREST puede traer
+ * la organización embebida a través del FK org_members.org_id →
+ * organizations.id en la misma consulta, en vez de dos secuenciales.
+ */
 export async function getCurrentOrg(userId: string): Promise<Organization | null> {
   const service = createServiceClient();
 
   const { data: membership, error: membershipErr } = await service
     .from("org_members")
-    .select("org_id, role")
+    .select("role, organizations (id, name, slug, plan)")
     .eq("user_id", userId)
-    .maybeSingle();
+    .maybeSingle<MembershipConOrg>();
   if (membershipErr) throw membershipErr;
-  if (!membership) return null;
+  if (!membership || !membership.organizations) return null;
 
-  const { data: org, error: orgErr } = await service
-    .from("organizations")
-    .select("id, name, slug, plan")
-    .eq("id", membership.org_id)
-    .single();
-  if (orgErr) throw orgErr;
-  return { ...org, role: membership.role as OrgRole };
+  return { ...membership.organizations, role: membership.role };
 }

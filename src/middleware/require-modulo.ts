@@ -8,7 +8,7 @@ export function requireModulo(modulo: Modulo) {
       return;
     }
 
-    const ent = await getEntitlements(req.org.id, req.user.id);
+    const ent = await getEntitlements(req, req.org);
     if (!tieneModulo(ent, modulo)) {
       const planRequerido = planRequeridoParaModulo(modulo) ?? "basico";
       res.status(403).json({

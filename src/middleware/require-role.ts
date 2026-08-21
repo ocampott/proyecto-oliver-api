@@ -1,6 +1,6 @@
 import type { Request, Response, NextFunction } from "express";
 import type { OrgRole } from "../lib/org.js";
-import { isPlatformAdmin } from "../lib/admin.js";
+import { checkPlatformAdmin } from "../lib/admin.js";
 
 /**
  * Requiere que el rol del usuario dentro de su organización (req.org.role,
@@ -16,7 +16,7 @@ export function requireRole(...roles: OrgRole[]) {
       return;
     }
 
-    if (await isPlatformAdmin(req.user.id)) {
+    if (await checkPlatformAdmin(req)) {
       next();
       return;
     }
