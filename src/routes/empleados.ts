@@ -9,6 +9,9 @@ import {
   updateEmpleado,
   setEmpleadoActivo,
   desvincularDispositivo,
+  getEmpleadoScoped,
+  tieneAsistencia,
+  deleteEmpleado,
 } from "../lib/empleados.js";
 import { getEntitlements, esErrorLimitePlan } from "../lib/planes.js";
 import { getOtpVigente, generarOtp } from "../lib/otp.js";
@@ -115,7 +118,20 @@ empleadosRouter.delete(
   requireRole("owner", "admin"),
   async (req: Request<{ id: string }>, res: Response) => {
     const { id } = req.params;
-    await setEmpleadoActivo(req.org!.id, id, false);
+    const empleado = await getEmpleadoScoped(req.org!.id, id);
+    if (!empleado) {
+      res.status(404).json({ error: "Empleado no encontrado" });
+      return;
+    }
+    if (empleado.activo) {
+      res.status(400).json({ error: "Desactivá al empleado antes de eliminarlo" });
+      return;
+    }
+    if (await tieneAsistencia(req.org!.id, id)) {
+      res.status(400).json({ error: "No se puede eliminar: tiene marcaciones de asistencia registradas" });
+      return;
+    }
+    await deleteEmpleado(req.org!.id, id);
     res.json({ ok: true });
   }
 );

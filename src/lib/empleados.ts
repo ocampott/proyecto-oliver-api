@@ -11,7 +11,7 @@ export interface Empleado {
   created_at: string;
 }
 
-export async function listEmpleados(orgId: string): Promise<Empleado[]> {
+export async function listEmpleados(orgId: string): Promise<(Empleado & { tiene_asistencia: boolean })[]> {
   const service = createServiceClient();
   const { data, error } = await service
     .from("empleados")
@@ -19,7 +19,14 @@ export async function listEmpleados(orgId: string): Promise<Empleado[]> {
     .eq("org_id", orgId)
     .order("nombre");
   if (error) throw error;
-  return data;
+
+  // Igual que en sucursales.ts: solo hace falta saber esto para los
+  // inactivos (es lo único que usa el botón de eliminar).
+  const inactivos = data.filter((e) => !e.activo);
+  const flags = await Promise.all(inactivos.map((e) => tieneAsistencia(orgId, e.id)));
+  const conAsistencia = new Set(inactivos.filter((_, i) => flags[i]).map((e) => e.id));
+
+  return data.map((e) => ({ ...e, tiene_asistencia: conAsistencia.has(e.id) }));
 }
 
 export async function createEmpleado(
@@ -110,6 +117,35 @@ export async function setEmpleadoActivo(orgId: string, id: string, activo: boole
     .update({ activo })
     .eq("org_id", orgId)
     .eq("id", id);
+  if (error) throw error;
+}
+
+export async function getEmpleadoScoped(orgId: string, id: string): Promise<Empleado | null> {
+  const service = createServiceClient();
+  const { data, error } = await service
+    .from("empleados")
+    .select("*")
+    .eq("org_id", orgId)
+    .eq("id", id)
+    .maybeSingle();
+  if (error) throw error;
+  return data;
+}
+
+export async function tieneAsistencia(orgId: string, empleadoId: string): Promise<boolean> {
+  const service = createServiceClient();
+  const { count, error } = await service
+    .from("asistencia")
+    .select("id", { count: "exact", head: true })
+    .eq("org_id", orgId)
+    .eq("empleado_id", empleadoId);
+  if (error) throw error;
+  return (count ?? 0) > 0;
+}
+
+export async function deleteEmpleado(orgId: string, id: string): Promise<void> {
+  const service = createServiceClient();
+  const { error } = await service.from("empleados").delete().eq("org_id", orgId).eq("id", id);
   if (error) throw error;
 }
 
