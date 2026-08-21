@@ -7,6 +7,7 @@ export interface Miembro {
   email: string;
   role: OrgRole;
   createdAt: string;
+  activo: boolean;
 }
 
 interface OrgMemberRow {
@@ -40,6 +41,7 @@ export async function listMiembros(orgId: string): Promise<Miembro[]> {
         email: userData.user?.email ?? "(sin email)",
         role: row.role,
         createdAt: row.created_at,
+        activo: Boolean(userData.user?.email_confirmed_at),
       };
     })
   );
@@ -82,7 +84,13 @@ export async function invitarMiembro(orgId: string, email: string): Promise<Miem
     throw insertErr;
   }
 
-  return { userId: invited.user.id, email, role: "admin", createdAt: new Date().toISOString() };
+  return {
+    userId: invited.user.id,
+    email,
+    role: "admin",
+    createdAt: new Date().toISOString(),
+    activo: false,
+  };
 }
 
 export async function eliminarMiembro(orgId: string, userId: string): Promise<void> {
