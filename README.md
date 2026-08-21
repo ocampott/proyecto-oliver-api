@@ -2,13 +2,9 @@
 
 Backend de Proyecto Oliver — Node + Express + TypeScript, conectado a Supabase remoto (sin stack local/Docker).
 
-Es el backend que antes vivía en `proyecto-oliver/server` (Fastify). Se migró a un repo propio y a Express manteniendo el mismo contrato de API para no romper el frontend, que vive en el repo hermano [`proyecto-oliver`](https://github.com/ocampott/proyecto-oliver) (carpeta `web/`).
-
 ## Requisitos
 
 - Node.js >= 20
-- Un proyecto Supabase remoto ya creado, con las migraciones de `supabase/migrations/` aplicadas.
-- No hace falta Docker ni Supabase local — todo corre contra el proyecto remoto compartido.
 
 ## Setup
 
@@ -59,39 +55,3 @@ La base remota compartida tiene 4 cuentas listas para probar cada nivel de plan,
 | `basico@test.local` | Básico |
 | `pro@test.local` | Pro |
 | `superadmin@test.local` | Superadmin (platform admin, sin límites de plan) |
-
-Se pueden renombrar/resetear con `npm run seed:demo` (crea un usuario `demo@test.local`/`demo123456` nuevo con org, sucursal y empleado de prueba) o editando manualmente en `auth.users` vía el Admin API de Supabase.
-
-## Scripts
-
-- `npm run dev` — levanta el server con hot reload (`tsx watch`)
-- `npm run build` — compila a `dist/`
-- `npm run start` — corre el build compilado
-- `npm run typecheck` — `tsc --noEmit`
-- `npm run seed:demo` — crea datos demo (usuario, org, sucursal, empleado) en el Supabase remoto conectado
-
-## Migraciones
-
-Las migraciones SQL están en `supabase/migrations/`. Se aplican contra el proyecto remoto linkeado con la Supabase CLI:
-
-```bash
-npx supabase link --project-ref <ref-del-proyecto>
-npx supabase db push
-```
-
-No hay stack local de Supabase (sin `config.toml` ni Docker) — todo corre contra el proyecto remoto.
-
-## Estructura
-
-```
-src/
-  index.ts          # entrypoint Express (middlewares globales, montaje de routers)
-  env.ts             # validación de variables de entorno
-  middleware/         # requireAuth, requireOrg, requireModulo, requirePlatformAdmin
-  routes/             # un router por dominio (empleados, sucursales, asistencia, etc.)
-  lib/                # lógica de negocio framework-agnostic (Supabase queries, Excel, etc.)
-supabase/
-  migrations/         # migraciones SQL del schema
-scripts/
-  seed-demo.js        # seed de datos demo
-```
