@@ -52,6 +52,48 @@ export async function createSucursal(
   return data;
 }
 
+/**
+ * Crea la sucursal y chequea el tope de activas del plan en una sola
+ * transacción de Postgres (función crear_sucursal_con_limite, ver
+ * supabase/migrations/0008_limites_atomic.sql), para que dos requests
+ * concurrentes no puedan pasar el chequeo a la vez y superar el límite.
+ * max = null → sin límite (plan ilimitado/superadmin).
+ */
+export async function createSucursalConLimite(
+  orgId: string,
+  input: { nombre: string; lat?: number; lon?: number; radio_metros?: number; direccion?: string | null },
+  max: number | null
+): Promise<Sucursal> {
+  const service = createServiceClient();
+  const { data, error } = await service.rpc("crear_sucursal_con_limite", {
+    p_org_id: orgId,
+    p_nombre: input.nombre,
+    p_lat: input.lat ?? null,
+    p_lon: input.lon ?? null,
+    p_radio_metros: input.radio_metros ?? null,
+    p_direccion: input.direccion ?? null,
+    p_max: max,
+  });
+  if (error) throw error;
+  return data as Sucursal;
+}
+
+/** Mismo chequeo atómico que createSucursalConLimite, para reactivar una existente. */
+export async function reactivarSucursalConLimite(
+  orgId: string,
+  id: string,
+  max: number | null
+): Promise<Sucursal> {
+  const service = createServiceClient();
+  const { data, error } = await service.rpc("reactivar_sucursal_con_limite", {
+    p_org_id: orgId,
+    p_id: id,
+    p_max: max,
+  });
+  if (error) throw error;
+  return data as Sucursal;
+}
+
 export async function updateSucursal(
   orgId: string,
   id: string,

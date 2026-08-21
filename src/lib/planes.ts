@@ -3,16 +3,13 @@ import { isPlatformAdmin } from "./admin.js";
 
 export type PlanSlug = "gratis" | "basico" | "pro";
 
-export type Modulo =
-  | "asistencia"
-  | "horas"
-  | "turnos"
-  | "rrhh"
-  | "reportes"
-  | "liquidacion"
-  | "alertas"
-  | "whatsapp"
-  | "ia";
+/**
+ * Módulos que existen HOY en el producto (tienen rutas/UI reales). No
+ * agregar acá un módulo aspiracional/futuro todavía sin implementar —
+ * cuando se construya uno nuevo, preguntarle al usuario a qué plan(es)
+ * pertenece y agregarlo recién en ese momento a este tipo y a PLANES.
+ */
+export type Modulo = "asistencia" | "horas" | "turnos" | "rrhh" | "reportes";
 
 export interface PlanDef {
   slug: PlanSlug;
@@ -87,17 +84,7 @@ export const PLANES: Record<PlanSlug, PlanDef> = {
     nombre: "Pro",
     maxSucursales: null,
     maxEmpleados: null,
-    modulos: [
-      "asistencia",
-      "horas",
-      "turnos",
-      "rrhh",
-      "reportes",
-      "liquidacion",
-      "alertas",
-      "whatsapp",
-      "ia",
-    ],
+    modulos: ["asistencia", "horas", "turnos", "rrhh", "reportes"],
     precioMensual: 120000,
   },
 };
@@ -139,6 +126,23 @@ export function puedeCrearEmpleado(ent: Entitlements, cantidadActual: number): b
   if (ent.ilimitado) return true;
   if (ent.maxEmpleados === null) return true;
   return cantidadActual < ent.maxEmpleados;
+}
+
+/**
+ * Los RPC atómicos de creación/reactivación (crear_empleado_con_limite,
+ * reactivar_sucursal_con_limite, etc. — ver
+ * supabase/migrations/0008_limites_atomic.sql) señalizan el tope de plan
+ * con `raise exception 'limite_plan'`. Esta función detecta ese error
+ * específico para poder devolver el mismo 403 que ya devolvía el chequeo
+ * en JS (count-then-insert), sin confundirlo con otros errores de la DB.
+ */
+export function esErrorLimitePlan(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "message" in error &&
+    (error as { message: unknown }).message === "limite_plan"
+  );
 }
 
 export function planRequeridoParaModulo(modulo: Modulo): PlanSlug | null {

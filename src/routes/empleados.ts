@@ -3,14 +3,13 @@ import { requireAuth } from "../middleware/auth.js";
 import { requireOrg } from "../middleware/require-org.js";
 import {
   listEmpleados,
-  getEmpleadoById,
-  createEmpleado,
+  createEmpleadoConLimite,
+  reactivarEmpleadoConLimite,
   updateEmpleado,
   setEmpleadoActivo,
   desvincularDispositivo,
-  countEmpleadosActivos,
 } from "../lib/empleados.js";
-import { getEntitlements, puedeCrearEmpleado } from "../lib/planes.js";
+import { getEntitlements, esErrorLimitePlan } from "../lib/planes.js";
 import { getOtpVigente, generarOtp } from "../lib/otp.js";
 
 interface CrearBody {
@@ -50,21 +49,20 @@ empleadosRouter.post(
     }
 
     const ent = await getEntitlements(req.org!.id, req.user!.id);
-    const activos = await countEmpleadosActivos(req.org!.id);
-    if (!puedeCrearEmpleado(ent, activos)) {
-      res.status(403).json({
-        error: "limite_plan",
-        recurso: "empleados",
-        max: ent.maxEmpleados,
-      });
-      return;
+    try {
+      const empleado = await createEmpleadoConLimite(
+        req.org!.id,
+        { nombre: nombre.trim(), celular: celular?.trim() || undefined },
+        ent.maxEmpleados
+      );
+      res.status(201).json(empleado);
+    } catch (e) {
+      if (esErrorLimitePlan(e)) {
+        res.status(403).json({ error: "limite_plan", recurso: "empleados", max: ent.maxEmpleados });
+        return;
+      }
+      throw e;
     }
-
-    const empleado = await createEmpleado(req.org!.id, {
-      nombre: nombre.trim(),
-      celular: celular?.trim() || undefined,
-    });
-    res.status(201).json(empleado);
   }
 );
 
@@ -78,25 +76,20 @@ empleadosRouter.patch(
 
     if (typeof body.activo === "boolean") {
       if (body.activo) {
-        const empleado = await getEmpleadoById(id);
-        if (!empleado || empleado.org_id !== req.org!.id) {
+        const ent = await getEntitlements(req.org!.id, req.user!.id);
+        try {
+          await reactivarEmpleadoConLimite(req.org!.id, id, ent.maxEmpleados);
+        } catch (e) {
+          if (esErrorLimitePlan(e)) {
+            res.status(403).json({ error: "limite_plan", recurso: "empleados", max: ent.maxEmpleados });
+            return;
+          }
           res.status(404).json({ error: "Empleado no encontrado" });
           return;
         }
-        if (!empleado.activo) {
-          const ent = await getEntitlements(req.org!.id, req.user!.id);
-          const activos = await countEmpleadosActivos(req.org!.id);
-          if (!puedeCrearEmpleado(ent, activos)) {
-            res.status(403).json({
-              error: "limite_plan",
-              recurso: "empleados",
-              max: ent.maxEmpleados,
-            });
-            return;
-          }
-        }
+      } else {
+        await setEmpleadoActivo(req.org!.id, id, false);
       }
-      await setEmpleadoActivo(req.org!.id, id, body.activo);
     }
 
     const patch: { nombre?: string; celular?: string | null } = {};

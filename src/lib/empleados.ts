@@ -36,6 +36,45 @@ export async function createEmpleado(
   return data;
 }
 
+/**
+ * Crea el empleado y chequea el tope de activos del plan en una sola
+ * transacción de Postgres (función crear_empleado_con_limite, ver
+ * supabase/migrations/0008_limites_atomic.sql), para que dos requests
+ * concurrentes no puedan pasar el chequeo a la vez y superar el límite.
+ * max = null → sin límite (plan ilimitado/superadmin).
+ */
+export async function createEmpleadoConLimite(
+  orgId: string,
+  input: { nombre: string; celular?: string },
+  max: number | null
+): Promise<Empleado> {
+  const service = createServiceClient();
+  const { data, error } = await service.rpc("crear_empleado_con_limite", {
+    p_org_id: orgId,
+    p_nombre: input.nombre,
+    p_celular: input.celular ?? null,
+    p_max: max,
+  });
+  if (error) throw error;
+  return data as Empleado;
+}
+
+/** Mismo chequeo atómico que createEmpleadoConLimite, para reactivar uno existente. */
+export async function reactivarEmpleadoConLimite(
+  orgId: string,
+  id: string,
+  max: number | null
+): Promise<Empleado> {
+  const service = createServiceClient();
+  const { data, error } = await service.rpc("reactivar_empleado_con_limite", {
+    p_org_id: orgId,
+    p_id: id,
+    p_max: max,
+  });
+  if (error) throw error;
+  return data as Empleado;
+}
+
 export async function updateEmpleado(
   orgId: string,
   id: string,

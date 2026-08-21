@@ -4,14 +4,14 @@ import { requireAuth } from "../middleware/auth.js";
 import { requireOrg } from "../middleware/require-org.js";
 import {
   listSucursales,
-  createSucursal,
+  createSucursalConLimite,
+  reactivarSucursalConLimite,
   updateSucursal,
   getSucursal,
   tieneAsistencia,
   deleteSucursal,
-  countSucursalesActivas,
 } from "../lib/sucursales.js";
-import { getEntitlements, puedeCrearSucursal } from "../lib/planes.js";
+import { getEntitlements, esErrorLimitePlan } from "../lib/planes.js";
 import { env } from "../env.js";
 
 interface CrearBody {
@@ -50,24 +50,20 @@ sucursalesRouter.post(
     }
 
     const ent = await getEntitlements(req.org!.id, req.user!.id);
-    const activas = await countSucursalesActivas(req.org!.id);
-    if (!puedeCrearSucursal(ent, activas)) {
-      res.status(403).json({
-        error: "limite_plan",
-        recurso: "sucursales",
-        max: ent.maxSucursales,
-      });
-      return;
+    try {
+      const sucursal = await createSucursalConLimite(
+        req.org!.id,
+        { nombre: nombre.trim(), lat, lon, radio_metros, direccion },
+        ent.maxSucursales
+      );
+      res.status(201).json(sucursal);
+    } catch (e) {
+      if (esErrorLimitePlan(e)) {
+        res.status(403).json({ error: "limite_plan", recurso: "sucursales", max: ent.maxSucursales });
+        return;
+      }
+      throw e;
     }
-
-    const sucursal = await createSucursal(req.org!.id, {
-      nombre: nombre.trim(),
-      lat,
-      lon,
-      radio_metros,
-      direccion,
-    });
-    res.status(201).json(sucursal);
   }
 );
 
@@ -79,33 +75,33 @@ sucursalesRouter.patch(
     const { id } = req.params;
     const body = req.body ?? {};
 
-    if (body.activa === true) {
-      const actual = await getSucursal(req.org!.id, id);
-      if (!actual) {
-        res.status(404).json({ error: "Sucursal no encontrada" });
-        return;
-      }
-      if (!actual.activa) {
-        const ent = await getEntitlements(req.org!.id, req.user!.id);
-        const activas = await countSucursalesActivas(req.org!.id);
-        if (!puedeCrearSucursal(ent, activas)) {
-          res.status(403).json({
-            error: "limite_plan",
-            recurso: "sucursales",
-            max: ent.maxSucursales,
-          });
-          return;
-        }
-      }
-    }
-
     const patch: Parameters<typeof updateSucursal>[2] = {};
     if (typeof body.nombre === "string" && body.nombre.trim()) patch.nombre = body.nombre.trim();
     if (body.lat !== undefined) patch.lat = body.lat;
     if (body.lon !== undefined) patch.lon = body.lon;
     if (body.radio_metros !== undefined) patch.radio_metros = body.radio_metros;
     if (body.direccion !== undefined) patch.direccion = body.direccion;
-    if (typeof body.activa === "boolean") patch.activa = body.activa;
+
+    if (body.activa === true) {
+      const ent = await getEntitlements(req.org!.id, req.user!.id);
+      let reactivada;
+      try {
+        reactivada = await reactivarSucursalConLimite(req.org!.id, id, ent.maxSucursales);
+      } catch (e) {
+        if (esErrorLimitePlan(e)) {
+          res.status(403).json({ error: "limite_plan", recurso: "sucursales", max: ent.maxSucursales });
+          return;
+        }
+        res.status(404).json({ error: "Sucursal no encontrada" });
+        return;
+      }
+      if (Object.keys(patch).length === 0) {
+        res.json(reactivada);
+        return;
+      }
+    } else if (typeof body.activa === "boolean") {
+      patch.activa = false;
+    }
 
     const sucursal = await updateSucursal(req.org!.id, id, patch);
     res.json(sucursal);
