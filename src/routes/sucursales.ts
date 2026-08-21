@@ -78,6 +78,27 @@ sucursalesRouter.patch(
   async (req: Request<{ id: string }, unknown, EditarBody>, res: Response) => {
     const { id } = req.params;
     const body = req.body ?? {};
+
+    if (body.activa === true) {
+      const actual = await getSucursal(req.org!.id, id);
+      if (!actual) {
+        res.status(404).json({ error: "Sucursal no encontrada" });
+        return;
+      }
+      if (!actual.activa) {
+        const ent = await getEntitlements(req.org!.id, req.user!.id);
+        const activas = await countSucursalesActivas(req.org!.id);
+        if (!puedeCrearSucursal(ent, activas)) {
+          res.status(403).json({
+            error: "limite_plan",
+            recurso: "sucursales",
+            max: ent.maxSucursales,
+          });
+          return;
+        }
+      }
+    }
+
     const patch: Parameters<typeof updateSucursal>[2] = {};
     if (typeof body.nombre === "string" && body.nombre.trim()) patch.nombre = body.nombre.trim();
     if (body.lat !== undefined) patch.lat = body.lat;

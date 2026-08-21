@@ -3,6 +3,7 @@ import { requireAuth } from "../middleware/auth.js";
 import { requireOrg } from "../middleware/require-org.js";
 import {
   listEmpleados,
+  getEmpleadoById,
   createEmpleado,
   updateEmpleado,
   setEmpleadoActivo,
@@ -76,6 +77,25 @@ empleadosRouter.patch(
     const body = req.body ?? {};
 
     if (typeof body.activo === "boolean") {
+      if (body.activo) {
+        const empleado = await getEmpleadoById(id);
+        if (!empleado || empleado.org_id !== req.org!.id) {
+          res.status(404).json({ error: "Empleado no encontrado" });
+          return;
+        }
+        if (!empleado.activo) {
+          const ent = await getEntitlements(req.org!.id, req.user!.id);
+          const activos = await countEmpleadosActivos(req.org!.id);
+          if (!puedeCrearEmpleado(ent, activos)) {
+            res.status(403).json({
+              error: "limite_plan",
+              recurso: "empleados",
+              max: ent.maxEmpleados,
+            });
+            return;
+          }
+        }
+      }
       await setEmpleadoActivo(req.org!.id, id, body.activo);
     }
 

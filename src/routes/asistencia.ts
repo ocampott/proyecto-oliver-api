@@ -1,6 +1,7 @@
 import { Router, type Request, type Response } from "express";
 import { requireAuth } from "../middleware/auth.js";
 import { requireOrg } from "../middleware/require-org.js";
+import { requireModulo } from "../middleware/require-modulo.js";
 import {
   listAsistencia,
   deleteAsistencia,
@@ -120,6 +121,7 @@ asistenciaRouter.get(
   "/asistencia/export",
   requireAuth,
   requireOrg,
+  requireModulo("reportes"),
   async (req: Request<Record<string, never>, unknown, unknown, ExportQuery>, res: Response) => {
     const desde = req.query.desde || hoyAR();
     const hasta = req.query.hasta || hoyAR();
