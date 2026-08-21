@@ -1,5 +1,5 @@
 import type { Request, Response, NextFunction } from "express";
-import { createAnonClient } from "../lib/supabase-anon.js";
+import { verifyAccessToken } from "../lib/jwt.js";
 
 export async function requireAuth(req: Request, res: Response, next: NextFunction): Promise<void> {
   const header = req.headers.authorization;
@@ -9,13 +9,12 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
     return;
   }
 
-  const supabase = createAnonClient();
-  const { data, error } = await supabase.auth.getUser(token);
-  if (error || !data.user) {
+  const user = await verifyAccessToken(token);
+  if (!user) {
     res.status(401).json({ error: "No autorizado" });
     return;
   }
 
-  req.user = data.user;
+  req.user = user;
   next();
 }

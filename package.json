@@ -19,6 +19,7 @@
     "dotenv": "^16.4.7",
     "exceljs": "^4.4.0",
     "express": "^5.1.0",
+    "jose": "^6.2.10",
     "qrcode": "^1.5.4"
   },
   "devDependencies": {
