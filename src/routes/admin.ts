@@ -2,7 +2,7 @@ import { Router, type Request, type Response } from "express";
 import { requireAuth } from "../middleware/auth.js";
 import { requirePlatformAdmin } from "../middleware/require-platform-admin.js";
 import { createServiceClient } from "../lib/supabase-service.js";
-import { createOrganization } from "../lib/organizations.js";
+import { createOrganization, updateOrganization, getOrgResumen } from "../lib/organizations.js";
 import { PERIODOS, PLANES, type PlanSlug } from "../lib/planes.js";
 
 interface OrganizationRow {
@@ -92,6 +92,35 @@ adminRouter.post(
         error: e instanceof Error ? e.message : "Error al crear la organización",
       });
     }
+  }
+);
+
+interface EditarOrgBody {
+  name?: string;
+}
+
+adminRouter.patch(
+  "/admin/organizations/:id",
+  requireAuth,
+  requirePlatformAdmin,
+  async (req: Request<{ id: string }, unknown, EditarOrgBody>, res: Response) => {
+    const { name } = req.body ?? {};
+    if (!name?.trim()) {
+      res.status(400).json({ error: "El nombre es requerido" });
+      return;
+    }
+    const org = await updateOrganization(req.params.id, { name: name.trim() });
+    res.json(org);
+  }
+);
+
+adminRouter.get(
+  "/admin/organizations/:id/resumen",
+  requireAuth,
+  requirePlatformAdmin,
+  async (req: Request<{ id: string }>, res: Response) => {
+    const resumen = await getOrgResumen(req.params.id);
+    res.json(resumen);
   }
 );
 
