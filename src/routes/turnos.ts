@@ -10,6 +10,7 @@ import {
   insertHorariosBulk,
   listTurnoTemplates,
   insertTurnoTemplate,
+  updateTurnoTemplate,
   deleteTurnoTemplate,
   getTolerancia,
   setTolerancia,
@@ -201,6 +202,33 @@ turnosRouter.post(
       });
     } catch (e) {
       res.status(409).json({ error: e instanceof Error ? e.message : "No se pudo crear la plantilla" });
+      return;
+    }
+    res.json({ ok: true });
+  }
+);
+
+turnosRouter.patch(
+  "/turno-templates/:id",
+  requireAuth,
+  requireOrg,
+  requireModulo("turnos"),
+  async (req: Request<{ id: string }, unknown, TemplateBody>, res: Response) => {
+    const body = req.body ?? {};
+    if (body.nombre !== undefined && !body.nombre.trim()) {
+      res.status(400).json({ error: "Faltan datos de la plantilla" });
+      return;
+    }
+    const patch: Parameters<typeof updateTurnoTemplate>[2] = {};
+    if (body.nombre !== undefined) patch.nombre = body.nombre.trim();
+    if (body.hora_inicio !== undefined) patch.hora_inicio = body.hora_inicio;
+    if (body.hora_fin !== undefined) patch.hora_fin = body.hora_fin;
+    if (body.dias_semana !== undefined) patch.dias_semana = body.dias_semana;
+    if (body.tolerancia_min !== undefined) patch.tolerancia_min = body.tolerancia_min;
+    try {
+      await updateTurnoTemplate(req.org!.id, req.params.id, patch);
+    } catch (e) {
+      res.status(409).json({ error: e instanceof Error ? e.message : "No se pudo editar la plantilla" });
       return;
     }
     res.json({ ok: true });

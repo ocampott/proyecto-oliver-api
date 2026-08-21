@@ -182,6 +182,25 @@ export async function insertTurnoTemplate(
   }
 }
 
+export async function updateTurnoTemplate(
+  orgId: string,
+  id: string,
+  patch: {
+    nombre?: string;
+    hora_inicio?: string;
+    hora_fin?: string;
+    dias_semana?: number[];
+    tolerancia_min?: number | null;
+  }
+): Promise<void> {
+  const service = createServiceClient();
+  const { error } = await service.from("turno_templates").update(patch).eq("org_id", orgId).eq("id", id);
+  if (error) {
+    if (error.code === "23505") throw new Error("Ya existe una plantilla con ese nombre");
+    throw error;
+  }
+}
+
 export async function deleteTurnoTemplate(orgId: string, id: string): Promise<void> {
   const service = createServiceClient();
   const { error } = await service.from("turno_templates").delete().eq("org_id", orgId).eq("id", id);
