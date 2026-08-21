@@ -2,6 +2,7 @@ import { Router, type Request, type Response } from "express";
 import { requireAuth } from "../middleware/auth.js";
 import { requireOrg } from "../middleware/require-org.js";
 import { requireModulo } from "../middleware/require-modulo.js";
+import { requireRole } from "../middleware/require-role.js";
 import {
   listAusencias,
   insertAusencia,
@@ -55,6 +56,7 @@ rrhhRouter.get(
   requireAuth,
   requireOrg,
   requireModulo("rrhh"),
+  requireRole("owner", "admin"),
   async (req: Request<Record<string, never>, unknown, unknown, ListQuery>, res: Response) => {
     const ausencias = await listAusencias(req.org!.id, req.query);
     res.json({ ausencias, resumen: calcularResumenAusencias(ausencias) });
@@ -66,6 +68,7 @@ rrhhRouter.post(
   requireAuth,
   requireOrg,
   requireModulo("rrhh"),
+  requireRole("owner", "admin"),
   async (req: Request<unknown, unknown, CrearAusenciaBody>, res: Response) => {
     const { empleado_id, sucursal_id, fecha_desde, fecha_hasta, motivo, detalle, contacto, certificado_pendiente } =
       req.body ?? {};
@@ -104,6 +107,7 @@ rrhhRouter.patch(
   requireAuth,
   requireOrg,
   requireModulo("rrhh"),
+  requireRole("owner", "admin"),
   async (req: Request<{ id: string }, unknown, EditarAusenciaBody>, res: Response) => {
     const body = req.body ?? {};
     if (body.sucursal_id !== undefined && body.sucursal_id !== null) {
@@ -137,13 +141,14 @@ rrhhRouter.delete(
   requireAuth,
   requireOrg,
   requireModulo("rrhh"),
+  requireRole("owner", "admin"),
   async (req: Request<{ id: string }>, res: Response) => {
     await deleteAusencia(req.org!.id, req.params.id);
     res.json({ ok: true });
   }
 );
 
-rrhhRouter.get("/settings/rrhh-categorias", requireAuth, requireOrg, requireModulo("rrhh"), async (req: Request, res: Response) => {
+rrhhRouter.get("/settings/rrhh-categorias", requireAuth, requireOrg, requireModulo("rrhh"), requireRole("owner", "admin"), async (req: Request, res: Response) => {
   res.json({ categorias: await getRrhhCategorias(req.org!.id) });
 });
 
@@ -152,6 +157,7 @@ rrhhRouter.patch(
   requireAuth,
   requireOrg,
   requireModulo("rrhh"),
+  requireRole("owner", "admin"),
   async (req: Request<unknown, unknown, CategoriasBody>, res: Response) => {
     const categorias = req.body?.categorias;
     if (!Array.isArray(categorias) || categorias.some((c) => typeof c !== "string" || !c.trim())) {
@@ -168,6 +174,7 @@ rrhhRouter.get(
   requireAuth,
   requireOrg,
   requireModulo("rrhh"),
+  requireRole("owner", "admin"),
   async (req: Request<Record<string, never>, unknown, unknown, ListQuery>, res: Response) => {
     const ausencias = await listAusencias(req.org!.id, req.query);
 

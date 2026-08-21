@@ -2,6 +2,7 @@ import { Router, type Request, type Response } from "express";
 import { requireAuth } from "../middleware/auth.js";
 import { requireOrg } from "../middleware/require-org.js";
 import { requireModulo } from "../middleware/require-modulo.js";
+import { requireRole } from "../middleware/require-role.js";
 import { calcularHoras, calcularResumenHoras } from "../lib/asistencia.js";
 import { generarExcel, enviarExcel } from "../lib/excel.js";
 
@@ -44,6 +45,7 @@ horasRouter.get(
   requireAuth,
   requireOrg,
   requireModulo("horas"),
+  requireRole("owner", "admin"),
   async (req: Request<Record<string, never>, unknown, unknown, HorasQuery>, res: Response) => {
     const { sucursalId } = req.query;
     const desde = req.query.desde || inicioDeMesAR();
@@ -61,6 +63,7 @@ horasRouter.get(
   requireAuth,
   requireOrg,
   requireModulo("horas"),
+  requireRole("owner", "admin"),
   async (req: Request<Record<string, never>, unknown, unknown, ExportQuery>, res: Response) => {
     const desde = req.query.desde || inicioDeMesAR();
     const hasta = req.query.hasta || hoyAR();

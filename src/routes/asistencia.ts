@@ -2,6 +2,7 @@ import { Router, type Request, type Response } from "express";
 import { requireAuth } from "../middleware/auth.js";
 import { requireOrg } from "../middleware/require-org.js";
 import { requireModulo } from "../middleware/require-modulo.js";
+import { requireRole } from "../middleware/require-role.js";
 import {
   listAsistencia,
   deleteAsistencia,
@@ -74,6 +75,7 @@ asistenciaRouter.delete(
   "/asistencia/:id",
   requireAuth,
   requireOrg,
+  requireRole("owner", "admin"),
   async (req: Request<{ id: string }>, res: Response) => {
     const { id } = req.params;
     await deleteAsistencia(req.org!.id, id);
@@ -122,6 +124,7 @@ asistenciaRouter.get(
   requireAuth,
   requireOrg,
   requireModulo("reportes"),
+  requireRole("owner", "admin"),
   async (req: Request<Record<string, never>, unknown, unknown, ExportQuery>, res: Response) => {
     const desde = req.query.desde || hoyAR();
     const hasta = req.query.hasta || hoyAR();

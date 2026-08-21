@@ -1,6 +1,7 @@
 import { Router, type Request, type Response } from "express";
 import { requireAuth } from "../middleware/auth.js";
 import { requireOrg } from "../middleware/require-org.js";
+import { requireRole } from "../middleware/require-role.js";
 import {
   listEmpleados,
   createEmpleadoConLimite,
@@ -41,6 +42,7 @@ empleadosRouter.post(
   "/empleados",
   requireAuth,
   requireOrg,
+  requireRole("owner", "admin"),
   async (req: Request<unknown, unknown, CrearBody>, res: Response) => {
     const { nombre, celular } = req.body ?? {};
     if (!nombre?.trim()) {
@@ -70,6 +72,7 @@ empleadosRouter.patch(
   "/empleados/:id",
   requireAuth,
   requireOrg,
+  requireRole("owner", "admin"),
   async (req: Request<{ id: string }, unknown, EditarBody>, res: Response) => {
     const { id } = req.params;
     const body = req.body ?? {};
@@ -109,6 +112,7 @@ empleadosRouter.delete(
   "/empleados/:id",
   requireAuth,
   requireOrg,
+  requireRole("owner", "admin"),
   async (req: Request<{ id: string }>, res: Response) => {
     const { id } = req.params;
     await setEmpleadoActivo(req.org!.id, id, false);
@@ -120,6 +124,7 @@ empleadosRouter.post(
   "/empleados/:id/desvincular",
   requireAuth,
   requireOrg,
+  requireRole("owner", "admin"),
   async (req: Request<{ id: string }>, res: Response) => {
     const { id } = req.params;
     await desvincularDispositivo(req.org!.id, id);
@@ -131,6 +136,7 @@ empleadosRouter.post(
   "/empleados/:id/otp",
   requireAuth,
   requireOrg,
+  requireRole("owner", "admin"),
   async (req: Request<{ id: string }>, res: Response) => {
     const { id } = req.params;
     try {

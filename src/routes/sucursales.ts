@@ -2,6 +2,7 @@ import { Router, type Request, type Response } from "express";
 import QRCode from "qrcode";
 import { requireAuth } from "../middleware/auth.js";
 import { requireOrg } from "../middleware/require-org.js";
+import { requireRole } from "../middleware/require-role.js";
 import {
   listSucursales,
   createSucursalConLimite,
@@ -42,6 +43,7 @@ sucursalesRouter.post(
   "/sucursales",
   requireAuth,
   requireOrg,
+  requireRole("owner", "admin"),
   async (req: Request<unknown, unknown, CrearBody>, res: Response) => {
     const { nombre, lat, lon, radio_metros, direccion } = req.body ?? {};
     if (!nombre?.trim()) {
@@ -71,6 +73,7 @@ sucursalesRouter.patch(
   "/sucursales/:id",
   requireAuth,
   requireOrg,
+  requireRole("owner", "admin"),
   async (req: Request<{ id: string }, unknown, EditarBody>, res: Response) => {
     const { id } = req.params;
     const body = req.body ?? {};
@@ -112,6 +115,7 @@ sucursalesRouter.delete(
   "/sucursales/:id",
   requireAuth,
   requireOrg,
+  requireRole("owner", "admin"),
   async (req: Request<{ id: string }>, res: Response) => {
     const { id } = req.params;
     const sucursal = await getSucursal(req.org!.id, id);

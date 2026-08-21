@@ -1,10 +1,19 @@
 import { createServiceClient } from "./supabase-service.js";
 
+export type OrgRole = "owner" | "admin" | "agent";
+
 export interface Organization {
   id: string;
   name: string;
   slug: string;
   plan: string;
+  /**
+   * Rol del usuario autenticado dentro de esta organización. Solo viene
+   * poblado cuando la org se resolvió a partir de una membership
+   * (getCurrentOrg) — getOrgBySlug (flujo público de /marcar, sin usuario
+   * autenticado) no tiene rol y lo deja undefined.
+   */
+  role?: OrgRole;
 }
 
 export async function getOrgBySlug(slug: string): Promise<Organization | null> {
@@ -23,7 +32,7 @@ export async function getCurrentOrg(userId: string): Promise<Organization | null
 
   const { data: membership, error: membershipErr } = await service
     .from("org_members")
-    .select("org_id")
+    .select("org_id, role")
     .eq("user_id", userId)
     .maybeSingle();
   if (membershipErr) throw membershipErr;
@@ -35,5 +44,5 @@ export async function getCurrentOrg(userId: string): Promise<Organization | null
     .eq("id", membership.org_id)
     .single();
   if (orgErr) throw orgErr;
-  return org;
+  return { ...org, role: membership.role as OrgRole };
 }

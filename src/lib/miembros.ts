@@ -1,7 +1,6 @@
 import { createServiceClient } from "./supabase-service.js";
 import { env } from "../env.js";
-
-export type OrgRole = "owner" | "admin" | "agent";
+import type { OrgRole } from "./org.js";
 
 export interface Miembro {
   userId: string;
@@ -64,6 +63,11 @@ export async function invitarMiembro(orgId: string, email: string): Promise<Miem
   if (inviteErr) {
     if (inviteErr.code === "email_exists") {
       throw new Error("Ese email ya tiene una cuenta en la plataforma.");
+    }
+    if (inviteErr.code === "over_email_send_rate_limit") {
+      throw new Error(
+        "Se alcanzó el límite de mails que Supabase permite enviar sin un SMTP propio configurado. Esperá unos minutos y probá de nuevo, o configurá un proveedor de SMTP en el dashboard de Supabase."
+      );
     }
     throw inviteErr;
   }

@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { requireAuth } from "../middleware/auth.js";
 import { requireOrg } from "../middleware/require-org.js";
+import { requireRole } from "../middleware/require-role.js";
 import { env } from "../env.js";
 
 interface DetailsBody {
@@ -21,7 +22,7 @@ const FIELD_MASK = "formattedAddress,location,addressComponents";
 
 export const placesRouter = Router();
 
-placesRouter.post("/places/details", requireAuth, requireOrg, async (req, res) => {
+placesRouter.post("/places/details", requireAuth, requireOrg, requireRole("owner", "admin"), async (req, res) => {
   const { placeId, sessionToken } = (req.body ?? {}) as DetailsBody;
   if (!placeId) {
     res.status(400).json({ error: "El placeId es requerido" });

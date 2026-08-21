@@ -2,6 +2,7 @@ import { Router, type Request, type Response } from "express";
 import { requireAuth } from "../middleware/auth.js";
 import { requireOrg } from "../middleware/require-org.js";
 import { requireModulo } from "../middleware/require-modulo.js";
+import { requireRole } from "../middleware/require-role.js";
 import {
   listHorarios,
   insertHorario,
@@ -84,6 +85,7 @@ turnosRouter.get(
   requireAuth,
   requireOrg,
   requireModulo("turnos"),
+  requireRole("owner", "admin"),
   async (req: Request<Record<string, never>, unknown, unknown, HorariosQuery>, res: Response) => {
     const data = await listHorarios(req.org!.id, req.query.empleadoId);
     res.json(data);
@@ -95,6 +97,7 @@ turnosRouter.post(
   requireAuth,
   requireOrg,
   requireModulo("turnos"),
+  requireRole("owner", "admin"),
   async (req: Request<unknown, unknown, CrearHorarioBody>, res: Response) => {
     const { empleado_id, sucursal_id, dia_semana, hora_inicio, hora_fin, tolerancia_min } = req.body ?? {};
     if (!empleado_id || dia_semana === undefined || !hora_inicio || !hora_fin) {
@@ -123,6 +126,7 @@ turnosRouter.patch(
   requireAuth,
   requireOrg,
   requireModulo("turnos"),
+  requireRole("owner", "admin"),
   async (req: Request<{ id: string }, unknown, EditarHorarioBody>, res: Response) => {
     const body = req.body ?? {};
     if (body.sucursal_id !== undefined && body.sucursal_id !== null) {
@@ -148,6 +152,7 @@ turnosRouter.delete(
   requireAuth,
   requireOrg,
   requireModulo("turnos"),
+  requireRole("owner", "admin"),
   async (req: Request<{ id: string }>, res: Response) => {
     await deleteHorario(req.org!.id, req.params.id);
     res.json({ ok: true });
@@ -159,6 +164,7 @@ turnosRouter.post(
   requireAuth,
   requireOrg,
   requireModulo("turnos"),
+  requireRole("owner", "admin"),
   async (req: Request<unknown, unknown, BulkBody>, res: Response) => {
     const { empleado_ids, dias_semana, hora_inicio, hora_fin, tolerancia_min } = req.body ?? {};
     if (!empleado_ids?.length || !dias_semana?.length || !hora_inicio || !hora_fin) {
@@ -176,7 +182,7 @@ turnosRouter.post(
   }
 );
 
-turnosRouter.get("/turno-templates", requireAuth, requireOrg, requireModulo("turnos"), async (req: Request, res: Response) => {
+turnosRouter.get("/turno-templates", requireAuth, requireOrg, requireModulo("turnos"), requireRole("owner", "admin"), async (req: Request, res: Response) => {
   const data = await listTurnoTemplates(req.org!.id);
   res.json(data);
 });
@@ -186,6 +192,7 @@ turnosRouter.post(
   requireAuth,
   requireOrg,
   requireModulo("turnos"),
+  requireRole("owner", "admin"),
   async (req: Request<unknown, unknown, TemplateBody>, res: Response) => {
     const { nombre, hora_inicio, hora_fin, dias_semana, tolerancia_min } = req.body ?? {};
     if (!nombre?.trim() || !hora_inicio || !hora_fin) {
@@ -213,6 +220,7 @@ turnosRouter.patch(
   requireAuth,
   requireOrg,
   requireModulo("turnos"),
+  requireRole("owner", "admin"),
   async (req: Request<{ id: string }, unknown, TemplateBody>, res: Response) => {
     const body = req.body ?? {};
     if (body.nombre !== undefined && !body.nombre.trim()) {
@@ -240,13 +248,14 @@ turnosRouter.delete(
   requireAuth,
   requireOrg,
   requireModulo("turnos"),
+  requireRole("owner", "admin"),
   async (req: Request<{ id: string }>, res: Response) => {
     await deleteTurnoTemplate(req.org!.id, req.params.id);
     res.json({ ok: true });
   }
 );
 
-turnosRouter.get("/turnos/tolerancia", requireAuth, requireOrg, requireModulo("turnos"), async (req: Request, res: Response) => {
+turnosRouter.get("/turnos/tolerancia", requireAuth, requireOrg, requireModulo("turnos"), requireRole("owner", "admin"), async (req: Request, res: Response) => {
   res.json({ tolerancia_min: await getTolerancia(req.org!.id) });
 });
 
@@ -255,6 +264,7 @@ turnosRouter.patch(
   requireAuth,
   requireOrg,
   requireModulo("turnos"),
+  requireRole("owner", "admin"),
   async (req: Request<unknown, unknown, ToleranciaBody>, res: Response) => {
     const min = Number(req.body?.tolerancia_min);
     if (!Number.isFinite(min) || min < 0) {
@@ -271,6 +281,7 @@ turnosRouter.get(
   requireAuth,
   requireOrg,
   requireModulo("turnos"),
+  requireRole("owner", "admin"),
   async (req: Request<Record<string, never>, unknown, unknown, CumplimientoQuery>, res: Response) => {
     const desde = req.query.desde ?? inicioDeMesAR();
     const hasta = req.query.hasta ?? hoyAR();

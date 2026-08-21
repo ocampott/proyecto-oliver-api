@@ -1,6 +1,7 @@
 import { Router, type Request, type Response } from "express";
 import { requireAuth } from "../middleware/auth.js";
 import { requireOrg } from "../middleware/require-org.js";
+import { requireRole } from "../middleware/require-role.js";
 import { getCurrentOrg } from "../lib/org.js";
 import { getEntitlements } from "../lib/planes.js";
 import { updateOrganization } from "../lib/organizations.js";
@@ -28,6 +29,7 @@ orgRouter.patch(
   "/org/current",
   requireAuth,
   requireOrg,
+  requireRole("owner"),
   async (req: Request<unknown, unknown, EditarOrgBody>, res: Response) => {
     const { name } = req.body ?? {};
     if (!name?.trim()) {
@@ -39,7 +41,7 @@ orgRouter.patch(
   }
 );
 
-orgRouter.get("/org/miembros", requireAuth, requireOrg, async (req: Request, res: Response) => {
+orgRouter.get("/org/miembros", requireAuth, requireOrg, requireRole("owner", "admin"), async (req: Request, res: Response) => {
   const miembros = await listMiembros(req.org!.id);
   res.json(miembros);
 });
@@ -52,6 +54,7 @@ orgRouter.post(
   "/org/miembros",
   requireAuth,
   requireOrg,
+  requireRole("owner"),
   async (req: Request<unknown, unknown, InvitarBody>, res: Response) => {
     const { email } = req.body ?? {};
     if (!email?.trim()) {
@@ -71,6 +74,7 @@ orgRouter.delete(
   "/org/miembros/:userId",
   requireAuth,
   requireOrg,
+  requireRole("owner"),
   async (req: Request<{ userId: string }>, res: Response) => {
     try {
       await eliminarMiembro(req.org!.id, req.params.userId);
