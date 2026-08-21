@@ -10,9 +10,7 @@ Backend de Proyecto Oliver — Node + Express + TypeScript, conectado a Supabase
 
 ```bash
 npm install
-cp .env.example .env.local
-# completar .env.local con las credenciales del proyecto Supabase remoto
-# (te las pasa quien te invitó)
+# Crear archivo .env y .env.local y cargar las keys
 npm run dev
 ```
 
