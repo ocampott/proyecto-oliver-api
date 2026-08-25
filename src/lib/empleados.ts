@@ -1,5 +1,6 @@
 import { createServiceClient } from "./supabase-service.js";
 import { validarEmpleado, buscarEmpleadoParecido } from "./nomina.js";
+import { rangeFor, buildMeta, type PaginationParams, type Paginated } from "./pagination.js";
 
 export type EstadoEmpleado = "activo" | "de_licencia" | "suspendido" | "baja";
 
@@ -34,6 +35,55 @@ export async function listEmpleados(orgId: string): Promise<(Empleado & { tiene_
   const conAsistencia = new Set(inactivos.filter((_, i) => flags[i]).map((e) => e.id));
 
   return data.map((e) => ({ ...e, tiene_asistencia: conAsistencia.has(e.id) }));
+}
+
+export interface ListEmpleadosParams extends PaginationParams {
+  q?: string;
+  estado?: EstadoEmpleado;
+  sucursalId?: string;
+  cuil?: "con" | "sin";
+  dispositivo?: "vinculado" | "no_vinculado";
+}
+
+export async function listEmpleadosPaginado(
+  orgId: string,
+  params: ListEmpleadosParams
+): Promise<Paginated<Empleado & { tiene_asistencia: boolean }>> {
+  const service = createServiceClient();
+  const { from, to } = rangeFor(params);
+
+  let query = service
+    .from("empleados")
+    .select("*", { count: "exact" })
+    .eq("org_id", orgId)
+    .order("apellido")
+    .order("nombre")
+    .range(from, to);
+
+  if (params.q) {
+    const qSafe = params.q.trim().replace(/[%,]/g, "");
+    if (qSafe) query = query.or(`nombre.ilike.%${qSafe}%,apellido.ilike.%${qSafe}%`);
+  }
+  if (params.estado) query = query.eq("estado", params.estado);
+  if (params.sucursalId) query = query.eq("sucursal_id", params.sucursalId);
+  if (params.cuil === "con") query = query.not("cuil", "is", null);
+  if (params.cuil === "sin") query = query.is("cuil", null);
+  if (params.dispositivo === "vinculado") query = query.not("device_token", "is", null);
+  if (params.dispositivo === "no_vinculado") query = query.is("device_token", null);
+
+  const { data, error, count } = await query;
+  if (error) throw error;
+
+  // Igual que listEmpleados: solo hace falta tieneAsistencia para los
+  // inactivos de la página actual (antes era sobre TODA la lista).
+  const inactivos = data.filter((e) => e.estado === "baja");
+  const flags = await Promise.all(inactivos.map((e) => tieneAsistencia(orgId, e.id)));
+  const conAsistencia = new Set(inactivos.filter((_, i) => flags[i]).map((e) => e.id));
+
+  return {
+    data: data.map((e) => ({ ...e, tiene_asistencia: conAsistencia.has(e.id) })),
+    pagination: buildMeta(params, count ?? 0),
+  };
 }
 
 export async function createEmpleado(

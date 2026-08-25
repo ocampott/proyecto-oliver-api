@@ -7,6 +7,7 @@ import { validateBody } from "../lib/validation.js";
 import { crearEmpleadoSchema, editarEmpleadoSchema } from "./empleados.schemas.js";
 import {
   listEmpleados,
+  listEmpleadosPaginado,
   createEmpleadoConLimite,
   reactivarEmpleadoConLimite,
   updateEmpleado,
@@ -14,7 +15,10 @@ import {
   getEmpleadoScoped,
   tieneAsistencia,
   deleteEmpleado,
+  type Empleado,
+  type EstadoEmpleado,
 } from "../lib/empleados.js";
+import { parsePagination } from "../lib/pagination.js";
 import { getEntitlements, esErrorLimitePlan } from "../lib/planes.js";
 import { getOtpVigente, generarOtp } from "../lib/otp.js";
 
@@ -23,17 +27,55 @@ type EditarBody = z.infer<typeof editarEmpleadoSchema>;
 
 export const empleadosRouter = Router();
 
-empleadosRouter.get("/empleados", requireAuth, requireOrg, async (req: Request, res: Response) => {
-  const empleados = await listEmpleados(req.org!.id);
-  const data = await Promise.all(
+interface EmpleadosListQuery {
+  page?: string;
+  pageSize?: string;
+  q?: string;
+  estado?: EstadoEmpleado;
+  sucursalId?: string;
+  cuil?: "con" | "sin";
+  dispositivo?: "vinculado" | "no_vinculado";
+}
+
+async function conOtp(empleados: (Empleado & { tiene_asistencia: boolean })[]) {
+  return Promise.all(
     empleados.map(async (e) => {
       if (e.device_token) return { ...e, otp: null };
       const otp = await getOtpVigente(e.id);
       return { ...e, otp: otp ? { code: otp.code, expires_at: otp.expires_at } : null };
     })
   );
-  res.json(data);
-});
+}
+
+empleadosRouter.get(
+  "/empleados",
+  requireAuth,
+  requireOrg,
+  async (req: Request<Record<string, never>, unknown, unknown, EmpleadosListQuery>, res: Response) => {
+    const { q, estado, sucursalId, cuil, dispositivo, page, pageSize } = req.query;
+
+    // Sin page/pageSize en la query: mantiene la respuesta vieja (array
+    // plano, sin filtrar) — la usan varios selects/filtros de otras
+    // páginas (RRHH, Asistencia, Turnos, Horas) que necesitan la nómina
+    // completa, no una página. Paginar es opt-in según lo que mande el
+    // caller, no automático.
+    if (page === undefined && pageSize === undefined) {
+      const empleados = await listEmpleados(req.org!.id);
+      res.json(await conOtp(empleados));
+      return;
+    }
+
+    const result = await listEmpleadosPaginado(req.org!.id, {
+      ...parsePagination(req.query as unknown as Record<string, unknown>),
+      q,
+      estado,
+      sucursalId,
+      cuil,
+      dispositivo,
+    });
+    res.json({ data: await conOtp(result.data), pagination: result.pagination });
+  }
+);
 
 empleadosRouter.post(
   "/empleados",

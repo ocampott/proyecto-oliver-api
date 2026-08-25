@@ -45,5 +45,14 @@ export function rangeFor({ page, pageSize }: PaginationParams): { from: number; 
 }
 
 export function buildMeta(params: PaginationParams, total: number): PaginationMeta {
-  return { ...params, total, totalPages: Math.max(1, Math.ceil(total / params.pageSize)) };
+  // Pica explícitamente page/pageSize en vez de spreadear params completo:
+  // los callers (p.ej. listEmpleadosPaginado) suelen pasar un objeto más
+  // grande que PaginationParams (con filtros de dominio como q/estado/...)
+  // y esos campos no deben filtrarse al objeto `pagination` de la respuesta.
+  return {
+    page: params.page,
+    pageSize: params.pageSize,
+    total,
+    totalPages: Math.max(1, Math.ceil(total / params.pageSize)),
+  };
 }

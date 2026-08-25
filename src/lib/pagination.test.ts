@@ -56,4 +56,17 @@ describe("buildMeta", () => {
   it("total múltiplo exacto de pageSize no suma una página de más", () => {
     expect(buildMeta({ page: 1, pageSize: 20 }, 40).totalPages).toBe(2);
   });
+
+  it("no filtra propiedades extra del objeto params (p.ej. filtros de dominio) al resultado", () => {
+    const paramsConFiltros = { page: 1, pageSize: 20, q: "foo", estado: "activo" } as unknown as {
+      page: number;
+      pageSize: 10 | 20 | 30;
+    };
+    expect(buildMeta(paramsConFiltros, 5)).toEqual({
+      page: 1,
+      pageSize: 20,
+      total: 5,
+      totalPages: 1,
+    });
+  });
 });
