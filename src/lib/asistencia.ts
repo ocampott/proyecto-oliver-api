@@ -9,6 +9,7 @@ import {
   type Turno,
   type ResumenEmpleado,
 } from "./horas-calculo.js";
+import { rangeFor, buildMeta, type PaginationParams, type Paginated } from "./pagination.js";
 
 export { calcularResumenHoras };
 export type { Turno, ResumenEmpleado };
@@ -146,29 +147,45 @@ export interface AsistenciaConNombres extends Asistencia {
 
 export async function listAsistencia(
   orgId: string,
-  filters: { desde: string; hasta: string; sucursalId?: string; empleadoId?: string }
-): Promise<AsistenciaConNombres[]> {
+  filters: { desde: string; hasta: string; sucursalId?: string; empleadoId?: string; tipo?: TipoMarca }
+): Promise<AsistenciaConNombres[]>;
+export async function listAsistencia(
+  orgId: string,
+  filters: { desde: string; hasta: string; sucursalId?: string; empleadoId?: string; tipo?: TipoMarca },
+  params: PaginationParams
+): Promise<Paginated<AsistenciaConNombres>>;
+export async function listAsistencia(
+  orgId: string,
+  filters: { desde: string; hasta: string; sucursalId?: string; empleadoId?: string; tipo?: TipoMarca },
+  params?: PaginationParams
+): Promise<AsistenciaConNombres[] | Paginated<AsistenciaConNombres>> {
   const service = createServiceClient();
   let query = service
     .from("asistencia")
-    .select("*, empleados(nombre), sucursales(nombre)")
+    .select("*, empleados(nombre), sucursales(nombre)", params ? { count: "exact" } : undefined)
     .eq("org_id", orgId)
     .gte("created_at", diaUtcInicio(filters.desde))
     .lte("created_at", diaUtcFin(filters.hasta))
-    .order("created_at", { ascending: false })
-    .limit(500);
+    .order("created_at", { ascending: false });
   if (filters.sucursalId) query = query.eq("sucursal_id", filters.sucursalId);
   if (filters.empleadoId) query = query.eq("empleado_id", filters.empleadoId);
+  if (filters.tipo) query = query.eq("tipo", filters.tipo);
+  if (params) {
+    const { from, to } = rangeFor(params);
+    query = query.range(from, to);
+  }
 
-  const { data, error } = await query;
+  const { data, error, count } = await query;
   if (error) throw error;
-  return data.map((r) => ({
+  const mapped = data.map((r) => ({
     ...r,
     empleado_nombre: r.empleados?.nombre ?? null,
     sucursal_nombre: r.sucursales?.nombre ?? null,
     empleados: undefined,
     sucursales: undefined,
   }));
+
+  return params ? { data: mapped, pagination: buildMeta(params, count ?? 0) } : mapped;
 }
 
 export async function deleteAsistencia(orgId: string, id: string): Promise<void> {
@@ -198,23 +215,35 @@ export interface Rechazada {
 }
 
 /** Intentos rechazados sin resolver (la vista "pendientes" de la v1). */
-export async function listRechazadas(orgId: string): Promise<Rechazada[]> {
+export async function listRechazadas(orgId: string): Promise<Rechazada[]>;
+export async function listRechazadas(orgId: string, params: PaginationParams): Promise<Paginated<Rechazada>>;
+export async function listRechazadas(
+  orgId: string,
+  params?: PaginationParams
+): Promise<Rechazada[] | Paginated<Rechazada>> {
   const service = createServiceClient();
-  const { data, error } = await service
+  let query = service
     .from("asistencia_rechazada")
-    .select("*, empleados(nombre), sucursales(nombre)")
+    .select("*, empleados(nombre), sucursales(nombre)", params ? { count: "exact" } : undefined)
     .eq("org_id", orgId)
     .eq("resuelto", false)
-    .order("created_at", { ascending: false })
-    .limit(200);
+    .order("created_at", { ascending: false });
+  if (params) {
+    const { from, to } = rangeFor(params);
+    query = query.range(from, to);
+  }
+
+  const { data, error, count } = await query;
   if (error) throw error;
-  return data.map((r) => ({
+  const mapped = data.map((r) => ({
     ...r,
     empleado_nombre: r.empleados?.nombre ?? null,
     sucursal_nombre: r.sucursales?.nombre ?? null,
     empleados: undefined,
     sucursales: undefined,
   }));
+
+  return params ? { data: mapped, pagination: buildMeta(params, count ?? 0) } : mapped;
 }
 
 /**

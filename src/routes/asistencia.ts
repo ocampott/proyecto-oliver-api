@@ -12,6 +12,7 @@ import {
   type MotivoRechazo,
 } from "../lib/asistencia.js";
 import { generarExcel, enviarExcel } from "../lib/excel.js";
+import { parsePagination } from "../lib/pagination.js";
 
 const AR_TZ = "America/Argentina/Buenos_Aires";
 
@@ -42,6 +43,9 @@ interface ListQuery {
   hasta?: string;
   sucursalId?: string;
   empleadoId?: string;
+  tipo?: "entrada" | "salida";
+  page?: string;
+  pageSize?: string;
 }
 
 interface ResolverQuery {
@@ -60,14 +64,21 @@ asistenciaRouter.get(
   requireAuth,
   requireOrg,
   async (req: Request<Record<string, never>, unknown, unknown, ListQuery>, res: Response) => {
-    const { desde, hasta, sucursalId, empleadoId } = req.query;
-    const data = await listAsistencia(req.org!.id, {
-      desde: desde || hoyAR(),
-      hasta: hasta || hoyAR(),
-      sucursalId,
-      empleadoId,
-    });
-    res.json(data);
+    const { desde, hasta, sucursalId, empleadoId, tipo, page, pageSize } = req.query;
+    const filters = { desde: desde || hoyAR(), hasta: hasta || hoyAR(), sucursalId, empleadoId, tipo };
+
+    // Sin page/pageSize: mantiene la respuesta vieja (array plano) — la
+    // usa el widget en vivo del dashboard (useAsistenciaEnVivo), que
+    // necesita TODAS las marcas de hoy para calcular quién está adentro,
+    // no una página. Paginar es opt-in.
+    if (page === undefined && pageSize === undefined) {
+      const data = await listAsistencia(req.org!.id, filters);
+      res.json(data);
+      return;
+    }
+
+    const result = await listAsistencia(req.org!.id, filters, parsePagination(req.query as unknown as Record<string, unknown>));
+    res.json(result);
   }
 );
 
@@ -87,9 +98,9 @@ asistenciaRouter.get(
   "/asistencia/rechazadas",
   requireAuth,
   requireOrg,
-  async (req, res) => {
-    const data = await listRechazadas(req.org!.id);
-    res.json(data);
+  async (req: Request<Record<string, never>, unknown, unknown, { page?: string; pageSize?: string }>, res: Response) => {
+    const result = await listRechazadas(req.org!.id, parsePagination(req.query as unknown as Record<string, unknown>));
+    res.json(result);
   }
 );
 
