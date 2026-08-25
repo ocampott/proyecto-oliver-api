@@ -6,6 +6,7 @@ import {
   buscarEnNomina,
   getEmpleadoById,
   vincularDispositivo,
+  nombreCompleto,
 } from "../lib/empleados.js";
 import { getDeviceToken, nuevoDeviceToken, setDeviceCookie } from "../lib/device-token.js";
 import { generarOtp, verificarOtp } from "../lib/otp.js";
@@ -40,7 +41,7 @@ marcarRouter.get(
 
     const token = getDeviceToken(req as unknown as Request);
     const empleado = token ? await getEmpleadoByToken(token) : null;
-    const nombre = empleado && empleado.org_id === org.id ? empleado.nombre : null;
+    const nombre = empleado && empleado.org_id === org.id ? nombreCompleto(empleado) : null;
 
     res.json({ sucursalNombre: sucursal.nombre, empleadoNombre: nombre });
   }
@@ -93,7 +94,7 @@ marcarRouter.post("/marcar/identificar", validateBody(identificarSchema), async 
   }
 
   if (!exacto) {
-    res.json({ sugerencia: empleado.nombre });
+    res.json({ sugerencia: nombreCompleto(empleado) });
     return;
   }
 
@@ -109,7 +110,7 @@ marcarRouter.post("/marcar/verificar", validateBody(verificarSchema), async (req
   const { empleadoId, code } = req.body as { empleadoId: string; code: string };
 
   const empleado = await getEmpleadoById(empleadoId);
-  if (!empleado || !empleado.activo) {
+  if (!empleado || !["activo", "de_licencia"].includes(empleado.estado)) {
     res.status(404).json({ error: "Empleado no encontrado" });
     return;
   }
@@ -130,7 +131,7 @@ marcarRouter.post("/marcar/verificar", validateBody(verificarSchema), async (req
   await vincularDispositivo(empleado.org_id, empleado.id, token);
   setDeviceCookie(res, token);
 
-  res.json({ ok: true, nombre: empleado.nombre });
+  res.json({ ok: true, nombre: nombreCompleto(empleado) });
 });
 
 /**

@@ -1,13 +1,19 @@
 import { createServiceClient } from "./supabase-service.js";
 import { validarEmpleado, buscarEmpleadoParecido } from "./nomina.js";
 
+export type EstadoEmpleado = "activo" | "de_licencia" | "suspendido" | "baja";
+
 export interface Empleado {
   id: string;
   org_id: string;
   nombre: string;
+  apellido: string | null;
   celular: string | null;
+  cuil: string | null;
+  fecha_ingreso: string | null;
+  sucursal_id: string | null;
   device_token: string | null;
-  activo: boolean;
+  estado: EstadoEmpleado;
   created_at: string;
 }
 
@@ -17,12 +23,13 @@ export async function listEmpleados(orgId: string): Promise<(Empleado & { tiene_
     .from("empleados")
     .select("*")
     .eq("org_id", orgId)
+    .order("apellido")
     .order("nombre");
   if (error) throw error;
 
   // Igual que en sucursales.ts: solo hace falta saber esto para los
   // inactivos (es lo único que usa el botón de eliminar).
-  const inactivos = data.filter((e) => !e.activo);
+  const inactivos = data.filter((e) => e.estado === "baja");
   const flags = await Promise.all(inactivos.map((e) => tieneAsistencia(orgId, e.id)));
   const conAsistencia = new Set(inactivos.filter((_, i) => flags[i]).map((e) => e.id));
 
@@ -31,15 +38,33 @@ export async function listEmpleados(orgId: string): Promise<(Empleado & { tiene_
 
 export async function createEmpleado(
   orgId: string,
-  input: { nombre: string; celular?: string }
+  input: {
+    nombre: string;
+    apellido?: string;
+    celular?: string;
+    cuil?: string;
+    fecha_ingreso?: string;
+    sucursal_id?: string;
+  }
 ): Promise<Empleado> {
   const service = createServiceClient();
   const { data, error } = await service
     .from("empleados")
-    .insert({ org_id: orgId, nombre: input.nombre, celular: input.celular ?? null })
+    .insert({
+      org_id: orgId,
+      nombre: input.nombre,
+      apellido: input.apellido ?? null,
+      celular: input.celular ?? null,
+      cuil: input.cuil ?? null,
+      fecha_ingreso: input.fecha_ingreso ?? null,
+      sucursal_id: input.sucursal_id ?? null,
+    })
     .select()
     .single();
-  if (error) throw error;
+  if (error) {
+    if (error.code === "23505") throw new Error("cuil_duplicado");
+    throw error;
+  }
   return data;
 }
 
@@ -52,7 +77,14 @@ export async function createEmpleado(
  */
 export async function createEmpleadoConLimite(
   orgId: string,
-  input: { nombre: string; celular?: string },
+  input: {
+    nombre: string;
+    apellido?: string;
+    celular?: string;
+    cuil?: string;
+    fecha_ingreso?: string;
+    sucursal_id?: string;
+  },
   max: number | null
 ): Promise<Empleado> {
   const service = createServiceClient();
@@ -60,16 +92,24 @@ export async function createEmpleadoConLimite(
     p_org_id: orgId,
     p_nombre: input.nombre,
     p_celular: input.celular ?? null,
+    p_apellido: input.apellido ?? null,
+    p_cuil: input.cuil ?? null,
+    p_fecha_ingreso: input.fecha_ingreso ?? null,
+    p_sucursal_id: input.sucursal_id ?? null,
     p_max: max,
   });
-  if (error) throw error;
+  if (error) {
+    if (error.code === "23505") throw new Error("cuil_duplicado");
+    throw error;
+  }
   return data as Empleado;
 }
 
-/** Mismo chequeo atómico que createEmpleadoConLimite, para reactivar uno existente. */
+/** Mismo chequeo atómico que createEmpleadoConLimite, para reactivar uno existente (o cambiar su estado). */
 export async function reactivarEmpleadoConLimite(
   orgId: string,
   id: string,
+  nuevoEstado: EstadoEmpleado,
   max: number | null
 ): Promise<Empleado> {
   const service = createServiceClient();
@@ -77,6 +117,7 @@ export async function reactivarEmpleadoConLimite(
     p_org_id: orgId,
     p_id: id,
     p_max: max,
+    p_nuevo_estado: nuevoEstado,
   });
   if (error) throw error;
   return data as Empleado;
@@ -85,7 +126,14 @@ export async function reactivarEmpleadoConLimite(
 export async function updateEmpleado(
   orgId: string,
   id: string,
-  patch: { nombre?: string; celular?: string | null }
+  patch: {
+    nombre?: string;
+    apellido?: string | null;
+    celular?: string | null;
+    cuil?: string | null;
+    fecha_ingreso?: string | null;
+    sucursal_id?: string | null;
+  }
 ): Promise<Empleado> {
   const service = createServiceClient();
   const { data, error } = await service
@@ -95,7 +143,10 @@ export async function updateEmpleado(
     .eq("id", id)
     .select()
     .single();
-  if (error) throw error;
+  if (error) {
+    if (error.code === "23505") throw new Error("cuil_duplicado");
+    throw error;
+  }
   return data;
 }
 
@@ -105,19 +156,9 @@ export async function countEmpleadosActivos(orgId: string): Promise<number> {
     .from("empleados")
     .select("id", { count: "exact", head: true })
     .eq("org_id", orgId)
-    .eq("activo", true);
+    .neq("estado", "baja");
   if (error) throw error;
   return count ?? 0;
-}
-
-export async function setEmpleadoActivo(orgId: string, id: string, activo: boolean): Promise<void> {
-  const service = createServiceClient();
-  const { error } = await service
-    .from("empleados")
-    .update({ activo })
-    .eq("org_id", orgId)
-    .eq("id", id);
-  if (error) throw error;
 }
 
 export async function getEmpleadoScoped(orgId: string, id: string): Promise<Empleado | null> {
@@ -166,7 +207,7 @@ export async function getEmpleadoByToken(token: string): Promise<Empleado | null
     .from("empleados")
     .select("*")
     .eq("device_token", token)
-    .eq("activo", true)
+    .in("estado", ["activo", "de_licencia"])
     .maybeSingle();
   if (error) throw error;
   return data;
@@ -182,7 +223,7 @@ export async function getEmpleadoByDeviceToken(
     .select("*")
     .eq("org_id", orgId)
     .eq("device_token", token)
-    .eq("activo", true)
+    .in("estado", ["activo", "de_licencia"])
     .maybeSingle();
   if (error) throw error;
   return data;
@@ -217,6 +258,11 @@ export interface ResultadoNomina {
   exacto: boolean;
 }
 
+/** Nombre completo para mostrar/comparar: "Apellido Nombre" (sin apellido cae a solo el nombre). */
+export function nombreCompleto(e: Pick<Empleado, "nombre" | "apellido">): string {
+  return `${e.apellido ?? ""} ${e.nombre}`.trim();
+}
+
 export async function buscarEnNomina(
   orgId: string,
   input: string
@@ -226,19 +272,19 @@ export async function buscarEnNomina(
     .from("empleados")
     .select("*")
     .eq("org_id", orgId)
-    .eq("activo", true);
+    .in("estado", ["activo", "de_licencia"]);
   if (error) throw error;
 
-  const nombres = activos.map((e) => e.nombre);
+  const nombres = activos.map(nombreCompleto);
 
   const exacto = validarEmpleado(nombres, input);
   if (exacto) {
-    return { empleado: activos.find((e) => e.nombre === exacto)!, exacto: true };
+    return { empleado: activos.find((e) => nombreCompleto(e) === exacto)!, exacto: true };
   }
 
   const parecido = buscarEmpleadoParecido(nombres, input);
   if (parecido) {
-    return { empleado: activos.find((e) => e.nombre === parecido)!, exacto: false };
+    return { empleado: activos.find((e) => nombreCompleto(e) === parecido)!, exacto: false };
   }
 
   return null;

@@ -45,7 +45,7 @@ export interface OrgResumen {
 export async function getOrgResumen(orgId: string): Promise<OrgResumen> {
   const service = createServiceClient();
   const [empleados, sucursales, miembros] = await Promise.all([
-    service.from("empleados").select("id", { count: "exact", head: true }).eq("org_id", orgId).eq("activo", true),
+    service.from("empleados").select("id", { count: "exact", head: true }).eq("org_id", orgId).neq("estado", "baja"),
     service.from("sucursales").select("id", { count: "exact", head: true }).eq("org_id", orgId).eq("activa", true),
     service.from("org_members").select("user_id", { count: "exact", head: true }).eq("org_id", orgId),
   ]);
