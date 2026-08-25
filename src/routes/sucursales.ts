@@ -17,6 +17,7 @@ import {
 import { getEntitlements, esErrorLimitePlan } from "../lib/planes.js";
 import { env } from "../env.js";
 import { validateBody } from "../lib/validation.js";
+import { parsePagination } from "../lib/pagination.js";
 import { crearSucursalSchema, editarSucursalSchema } from "./sucursales.schemas.js";
 import type { z } from "zod";
 
@@ -25,10 +26,27 @@ type EditarBody = z.infer<typeof editarSucursalSchema>;
 
 export const sucursalesRouter = Router();
 
-sucursalesRouter.get("/sucursales", requireAuth, requireOrg, async (req: Request, res: Response) => {
-  const data = await listSucursales(req.org!.id);
-  res.json(data);
-});
+interface SucursalesListQuery {
+  page?: string;
+  pageSize?: string;
+  q?: string;
+  estado?: "activos" | "inactivos";
+}
+
+sucursalesRouter.get(
+  "/sucursales",
+  requireAuth,
+  requireOrg,
+  async (req: Request<Record<string, never>, unknown, unknown, SucursalesListQuery>, res: Response) => {
+    const { q, estado } = req.query;
+    const result = await listSucursales(req.org!.id, {
+      ...parsePagination(req.query as unknown as Record<string, unknown>),
+      q,
+      estado,
+    });
+    res.json(result);
+  }
+);
 
 sucursalesRouter.post(
   "/sucursales",

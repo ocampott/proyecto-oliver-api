@@ -1,4 +1,5 @@
 import { createServiceClient } from "./supabase-service.js";
+import { rangeFor, buildMeta, type PaginationParams, type Paginated } from "./pagination.js";
 
 export interface Sucursal {
   id: string;
@@ -12,23 +13,46 @@ export interface Sucursal {
   created_at: string;
 }
 
-export async function listSucursales(orgId: string): Promise<(Sucursal & { tiene_asistencia: boolean })[]> {
+export interface ListSucursalesParams extends PaginationParams {
+  q?: string;
+  estado?: "activos" | "inactivos";
+}
+
+export async function listSucursales(
+  orgId: string,
+  params: ListSucursalesParams
+): Promise<Paginated<Sucursal & { tiene_asistencia: boolean }>> {
   const service = createServiceClient();
-  const { data, error } = await service
+  const { from, to } = rangeFor(params);
+
+  let query = service
     .from("sucursales")
-    .select("*")
+    .select("*", { count: "exact" })
     .eq("org_id", orgId)
-    .order("nombre");
+    .order("nombre")
+    .range(from, to);
+
+  if (params.q) {
+    const qSafe = params.q.trim().replace(/[%,]/g, "");
+    if (qSafe) query = query.ilike("nombre", `%${qSafe}%`);
+  }
+  if (params.estado === "activos") query = query.eq("activa", true);
+  if (params.estado === "inactivos") query = query.eq("activa", false);
+
+  const { data, error, count } = await query;
   if (error) throw error;
 
-  // Solo hace falta saber esto para las inactivas (es lo único que usa el
-  // botón de eliminar) — evita traer toda la tabla de asistencia del org,
-  // que con Supabase se corta en 1000 filas y daba falsos negativos.
+  // Solo hace falta saber esto para las inactivas de la página actual (es
+  // lo único que usa el botón de eliminar) — antes corría sobre toda la
+  // lista, ahora el N+1 queda acotado a la página.
   const inactivas = data.filter((s) => !s.activa);
   const flags = await Promise.all(inactivas.map((s) => tieneAsistencia(orgId, s.id)));
   const conAsistencia = new Set(inactivas.filter((_, i) => flags[i]).map((s) => s.id));
 
-  return data.map((s) => ({ ...s, tiene_asistencia: conAsistencia.has(s.id) }));
+  return {
+    data: data.map((s) => ({ ...s, tiene_asistencia: conAsistencia.has(s.id) })),
+    pagination: buildMeta(params, count ?? 0),
+  };
 }
 
 export async function createSucursal(

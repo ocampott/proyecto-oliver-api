@@ -7,6 +7,7 @@ import { PERIODOS, PLANES, type PlanSlug } from "../lib/planes.js";
 import { listMiembros } from "../lib/miembros.js";
 import { listEmpleados } from "../lib/empleados.js";
 import { listSucursales } from "../lib/sucursales.js";
+import { parsePagination } from "../lib/pagination.js";
 
 interface OrganizationRow {
   id: string;
@@ -151,9 +152,9 @@ adminRouter.get(
   "/admin/organizations/:id/sucursales",
   requireAuth,
   requirePlatformAdmin,
-  async (req: Request<{ id: string }>, res: Response) => {
-    const sucursales = await listSucursales(req.params.id);
-    res.json(sucursales);
+  async (req: Request<{ id: string }, unknown, unknown, { page?: string; pageSize?: string }>, res: Response) => {
+    const result = await listSucursales(req.params.id, parsePagination(req.query));
+    res.json(result);
   }
 );
 
