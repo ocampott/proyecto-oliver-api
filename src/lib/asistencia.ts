@@ -1,6 +1,17 @@
 import { createServiceClient } from "./supabase-service.js";
 import { dentroDeGeocerca } from "./geo.js";
 import type { Sucursal } from "./sucursales.js";
+import {
+  emparejarTurnos,
+  calcularResumenHoras,
+  ventanaConMargen,
+  type RegistroCrudo,
+  type Turno,
+  type ResumenEmpleado,
+} from "./horas-calculo.js";
+
+export { calcularResumenHoras };
+export type { Turno, ResumenEmpleado };
 
 export type TipoMarca = "entrada" | "salida";
 
@@ -256,52 +267,37 @@ export async function descartarRechazada(orgId: string, id: string): Promise<voi
 }
 
 // ── Horas trabajadas ────────────────────────────────────────────────────────
-// Empareja cada "entrada" con la siguiente "salida" cronológica del mismo
-// empleado+sucursal (port de calcularHorasTrabajadas del sistema viejo).
-// Salida sin entrada previa: dato huérfano, se ignora. Entrada sin salida:
-// turno en curso (horas: null).
-
-export interface Turno {
-  empleado_id: string;
-  nombre: string;
-  sucursal_id: string;
-  sucursal_nombre: string;
-  entrada_at: string;
-  salida_at: string | null;
-  horas: number | null;
-}
+// El emparejamiento entrada/salida es lógica pura y vive en horas-calculo.ts
+// (testeable sin DB). Acá solo se pide a la base con margen de 18hs para no
+// perder turnos que cruzan el borde del rango (ej. entrada 22:00 del último
+// día pedido, salida 06:00 del día siguiente — spec §2.1) y se filtra el
+// resultado a los turnos que arrancaron dentro del rango pedido.
 
 export async function calcularHoras(
   orgId: string,
   filters: { desde: string; hasta: string; sucursalId?: string }
 ): Promise<Turno[]> {
   const service = createServiceClient();
+  const ventana = ventanaConMargen(diaUtcInicio(filters.desde), diaUtcFin(filters.hasta));
+
   let query = service
     .from("asistencia")
     .select("empleado_id, sucursal_id, tipo, created_at, empleados(nombre), sucursales(nombre)")
     .eq("org_id", orgId)
-    .gte("created_at", diaUtcInicio(filters.desde))
-    .lte("created_at", diaUtcFin(filters.hasta))
+    .gte("created_at", ventana.desdeConMargen)
+    .lte("created_at", ventana.hastaConMargen)
     .order("created_at", { ascending: true });
   if (filters.sucursalId) query = query.eq("sucursal_id", filters.sucursalId);
 
   const { data, error } = await query;
   if (error) throw error;
 
-  interface Reg {
-    empleado_id: string;
-    sucursal_id: string;
-    tipo: TipoMarca;
-    created_at: string;
-    nombre: string;
-    sucursal_nombre: string;
-  }
   // supabase-js tipa los joins como array; con FK many-to-one viene un solo
   // elemento (o el objeto, según la versión).
   const nombreDe = (rel: { nombre: string } | { nombre: string }[] | null): string =>
     (Array.isArray(rel) ? rel[0]?.nombre : rel?.nombre) ?? "?";
 
-  const regs: Reg[] = data.map((r) => ({
+  const regs: RegistroCrudo[] = data.map((r) => ({
     empleado_id: r.empleado_id,
     sucursal_id: r.sucursal_id,
     tipo: r.tipo,
@@ -310,65 +306,7 @@ export async function calcularHoras(
     sucursal_nombre: nombreDe(r.sucursales),
   }));
 
-  const porPar = new Map<string, Reg[]>();
-  for (const r of regs) {
-    const key = `${r.empleado_id}:${r.sucursal_id}`;
-    if (!porPar.has(key)) porPar.set(key, []);
-    porPar.get(key)!.push(r);
-  }
-
-  const turnos: Turno[] = [];
-  for (const regsDelPar of porPar.values()) {
-    let pendiente: Reg | null = null;
-    const aTurno = (entrada: Reg, salida: Reg | null): Turno => ({
-      empleado_id: entrada.empleado_id,
-      nombre: entrada.nombre,
-      sucursal_id: entrada.sucursal_id,
-      sucursal_nombre: entrada.sucursal_nombre,
-      entrada_at: entrada.created_at,
-      salida_at: salida?.created_at ?? null,
-      horas: salida
-        ? Math.round(
-            ((new Date(salida.created_at).getTime() - new Date(entrada.created_at).getTime()) / 3600000) * 100
-          ) / 100
-        : null,
-    });
-
-    for (const r of regsDelPar) {
-      if (r.tipo === "entrada") {
-        if (pendiente) turnos.push(aTurno(pendiente, null));
-        pendiente = r;
-      } else if (pendiente) {
-        turnos.push(aTurno(pendiente, r));
-        pendiente = null;
-      }
-      // salida sin entrada previa: dato huérfano, se ignora
-    }
-    if (pendiente) turnos.push(aTurno(pendiente, null));
-  }
-
-  return turnos.sort((a, b) => a.nombre.localeCompare(b.nombre) || a.entrada_at.localeCompare(b.entrada_at));
-}
-
-export interface ResumenEmpleado {
-  nombre: string;
-  totalHoras: number;
-  enCurso: boolean;
-}
-
-export function calcularResumenHoras(turnos: Turno[]): ResumenEmpleado[] {
-  const porEmpleado = new Map<string, ResumenEmpleado>();
-  for (const t of turnos) {
-    let e = porEmpleado.get(t.empleado_id);
-    if (!e) {
-      e = { nombre: t.nombre, totalHoras: 0, enCurso: false };
-      porEmpleado.set(t.empleado_id, e);
-    }
-    if (t.horas !== null) {
-      e.totalHoras += t.horas;
-    } else {
-      e.enCurso = true;
-    }
-  }
-  return Array.from(porEmpleado.values()).sort((a, b) => a.nombre.localeCompare(b.nombre));
+  return emparejarTurnos(regs).filter(
+    (t) => t.entrada_at >= ventana.desdeInicio && t.entrada_at <= ventana.hastaFin
+  );
 }

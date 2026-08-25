@@ -10,6 +10,8 @@ import {
 import { getDeviceToken, nuevoDeviceToken, setDeviceCookie } from "../lib/device-token.js";
 import { generarOtp, verificarOtp } from "../lib/otp.js";
 import { registrarMarca, type TipoMarca, registrarRechazo } from "../lib/asistencia.js";
+import { validateBody } from "../lib/validation.js";
+import { identificarSchema, registrarSchema, verificarSchema } from "./marcar.schemas.js";
 
 interface EstadoQuery {
   org: string;
@@ -44,24 +46,14 @@ marcarRouter.get(
   }
 );
 
-interface IdentificarBody {
-  orgSlug?: string;
-  sucursalId?: string;
-  nombre?: string;
-}
-
 /**
  * Paso 1 del marcado público: identificar al empleado por nombre.
  * - Match exacto/subset sin dispositivo vinculado → genera OTP (lo ve el admin).
  * - Match aproximado → devuelve sugerencia para confirmar ("¿Sos Fulano?").
  * - Ya vinculado / no encontrado → rechazo registrado en asistencia_rechazada.
  */
-marcarRouter.post("/marcar/identificar", async (req, res) => {
-  const { orgSlug, sucursalId, nombre } = (req.body ?? {}) as IdentificarBody;
-  if (!orgSlug || !sucursalId || !nombre?.trim()) {
-    res.status(400).json({ error: "Faltan datos" });
-    return;
-  }
+marcarRouter.post("/marcar/identificar", validateBody(identificarSchema), async (req, res) => {
+  const { orgSlug, sucursalId, nombre } = req.body as { orgSlug: string; sucursalId: string; nombre: string };
 
   const org = await getOrgBySlug(orgSlug);
   if (!org) {
@@ -74,7 +66,7 @@ marcarRouter.post("/marcar/identificar", async (req, res) => {
     return;
   }
 
-  const resultado = await buscarEnNomina(org.id, nombre.trim());
+  const resultado = await buscarEnNomina(org.id, nombre);
   if (!resultado) {
     await registrarRechazo(org.id, {
       sucursal_id: sucursal.id,
@@ -109,21 +101,12 @@ marcarRouter.post("/marcar/identificar", async (req, res) => {
   res.json({ empleadoId: empleado.id });
 });
 
-interface VerificarBody {
-  empleadoId?: string;
-  code?: string;
-}
-
 /**
  * Paso 2 del marcado público: verificar el código OTP y vincular el
  * dispositivo (cookie httpOnly oliver_device).
  */
-marcarRouter.post("/marcar/verificar", async (req, res) => {
-  const { empleadoId, code } = (req.body ?? {}) as VerificarBody;
-  if (!empleadoId || !code?.trim()) {
-    res.status(400).json({ error: "Faltan datos" });
-    return;
-  }
+marcarRouter.post("/marcar/verificar", validateBody(verificarSchema), async (req, res) => {
+  const { empleadoId, code } = req.body as { empleadoId: string; code: string };
 
   const empleado = await getEmpleadoById(empleadoId);
   if (!empleado || !empleado.activo) {
@@ -150,34 +133,23 @@ marcarRouter.post("/marcar/verificar", async (req, res) => {
   res.json({ ok: true, nombre: empleado.nombre });
 });
 
-interface RegistrarBody {
-  sucursalId?: string;
-  tipo?: string;
-  lat?: number;
-  lon?: number;
-}
-
 /**
  * Paso 3 del marcado público: registrar entrada/salida con geocerca.
  * Requiere la cookie de dispositivo (vínculo previo con OTP).
  */
-marcarRouter.post("/marcar/registrar", async (req, res) => {
+marcarRouter.post("/marcar/registrar", validateBody(registrarSchema), async (req, res) => {
   const token = getDeviceToken(req);
   if (!token) {
     res.status(401).json({ error: "Dispositivo no vinculado" });
     return;
   }
 
-  const { sucursalId, tipo, lat, lon } = (req.body ?? {}) as RegistrarBody;
-  if (
-    !sucursalId ||
-    (tipo !== "entrada" && tipo !== "salida") ||
-    typeof lat !== "number" ||
-    typeof lon !== "number"
-  ) {
-    res.status(400).json({ error: "Faltan datos" });
-    return;
-  }
+  const { sucursalId, tipo, lat, lon } = req.body as {
+    sucursalId: string;
+    tipo: TipoMarca;
+    lat: number;
+    lon: number;
+  };
 
   const empleado = await getEmpleadoByToken(token);
   if (!empleado) {
@@ -191,14 +163,7 @@ marcarRouter.post("/marcar/registrar", async (req, res) => {
     return;
   }
 
-  const resultado = await registrarMarca(
-    empleado.org_id,
-    empleado.id,
-    sucursal,
-    tipo as TipoMarca,
-    lat,
-    lon
-  );
+  const resultado = await registrarMarca(empleado.org_id, empleado.id, sucursal, tipo, lat, lon);
 
   if (!resultado.ok) {
     if (resultado.motivo === "sucursal_sin_gps") {

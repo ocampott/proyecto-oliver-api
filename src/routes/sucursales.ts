@@ -1,5 +1,7 @@
 import { Router, type Request, type Response } from "express";
 import QRCode from "qrcode";
+import { GlobalFonts, createCanvas, loadImage } from "@napi-rs/canvas";
+import path from "path";
 import { requireAuth } from "../middleware/auth.js";
 import { requireOrg } from "../middleware/require-org.js";
 import { requireRole } from "../middleware/require-role.js";
@@ -14,23 +16,12 @@ import {
 } from "../lib/sucursales.js";
 import { getEntitlements, esErrorLimitePlan } from "../lib/planes.js";
 import { env } from "../env.js";
+import { validateBody } from "../lib/validation.js";
+import { crearSucursalSchema, editarSucursalSchema } from "./sucursales.schemas.js";
+import type { z } from "zod";
 
-interface CrearBody {
-  nombre?: string;
-  lat?: number;
-  lon?: number;
-  radio_metros?: number;
-  direccion?: string | null;
-}
-
-interface EditarBody {
-  nombre?: string;
-  lat?: number | null;
-  lon?: number | null;
-  radio_metros?: number;
-  direccion?: string | null;
-  activa?: boolean;
-}
+type CrearBody = z.infer<typeof crearSucursalSchema>;
+type EditarBody = z.infer<typeof editarSucursalSchema>;
 
 export const sucursalesRouter = Router();
 
@@ -44,18 +35,15 @@ sucursalesRouter.post(
   requireAuth,
   requireOrg,
   requireRole("owner", "admin"),
+  validateBody(crearSucursalSchema),
   async (req: Request<unknown, unknown, CrearBody>, res: Response) => {
-    const { nombre, lat, lon, radio_metros, direccion } = req.body ?? {};
-    if (!nombre?.trim()) {
-      res.status(400).json({ error: "El nombre es requerido" });
-      return;
-    }
+    const { nombre, lat, lon, radio_metros, direccion } = req.body;
 
     const ent = await getEntitlements(req, req.org!);
     try {
       const sucursal = await createSucursalConLimite(
         req.org!.id,
-        { nombre: nombre.trim(), lat, lon, radio_metros, direccion },
+        { nombre, lat, lon, radio_metros, direccion },
         ent.maxSucursales
       );
       res.status(201).json(sucursal);
@@ -74,12 +62,13 @@ sucursalesRouter.patch(
   requireAuth,
   requireOrg,
   requireRole("owner", "admin"),
+  validateBody(editarSucursalSchema),
   async (req: Request<{ id: string }, unknown, EditarBody>, res: Response) => {
     const { id } = req.params;
-    const body = req.body ?? {};
+    const body = req.body;
 
     const patch: Parameters<typeof updateSucursal>[2] = {};
-    if (typeof body.nombre === "string" && body.nombre.trim()) patch.nombre = body.nombre.trim();
+    if (body.nombre !== undefined) patch.nombre = body.nombre;
     if (body.lat !== undefined) patch.lat = body.lat;
     if (body.lon !== undefined) patch.lon = body.lon;
     if (body.radio_metros !== undefined) patch.radio_metros = body.radio_metros;
@@ -136,6 +125,43 @@ sucursalesRouter.delete(
   }
 );
 
+// Franja blanca abajo del QR con la marca "oliver", con la misma fuente
+// (Archivo ExtraBold) que usa el wordmark del navbar — no un sans-serif
+// genérico. Se agrega como una franja aparte en vez de superponerla sobre
+// los módulos del QR para no arriesgar la escaneabilidad — no hace falta
+// tocar el nivel de corrección de errores.
+const QR_WIDTH = 600;
+const QR_CAPTION_HEIGHT = 50;
+const ARCHIVO_FAMILY = "Archivo ExtraBold";
+
+// process.cwd() en vez de una ruta relativa al archivo compilado: tsc no
+// copia assets no-TS a dist/, pero tanto `npm run dev` (tsx) como
+// `npm start` (node dist/index.js) se invocan desde la raíz del repo, así
+// que esta ruta resuelve igual en los dos casos.
+GlobalFonts.registerFromPath(
+  path.join(process.cwd(), "src/assets/fonts/Archivo-ExtraBold.woff2"),
+  ARCHIVO_FAMILY
+);
+
+async function conMarcaOliver(qrPng: Buffer): Promise<Buffer> {
+  const canvas = createCanvas(QR_WIDTH, QR_WIDTH + QR_CAPTION_HEIGHT);
+  const ctx = canvas.getContext("2d");
+
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, QR_WIDTH, QR_WIDTH + QR_CAPTION_HEIGHT);
+
+  const qrImg = await loadImage(qrPng);
+  ctx.drawImage(qrImg, 0, 0, QR_WIDTH, QR_WIDTH);
+
+  ctx.fillStyle = "#18181b";
+  ctx.font = `26px "${ARCHIVO_FAMILY}"`;
+  ctx.textAlign = "right";
+  ctx.textBaseline = "alphabetic";
+  ctx.fillText("oliver", QR_WIDTH - 20, QR_WIDTH + QR_CAPTION_HEIGHT - 16);
+
+  return canvas.toBuffer("image/png");
+}
+
 sucursalesRouter.get(
   "/sucursales/:id/qr",
   requireAuth,
@@ -148,7 +174,8 @@ sucursalesRouter.get(
       return;
     }
     const url = `${env.marcarBaseUrl}/marcar/${req.org!.slug}/${sucursal.id}`;
-    const png = await QRCode.toBuffer(url, { width: 600, margin: 2 });
+    const qrPng = await QRCode.toBuffer(url, { width: QR_WIDTH, margin: 2 });
+    const png = await conMarcaOliver(qrPng);
     res.setHeader("Content-Type", "image/png");
     res.setHeader("Content-Disposition", `inline; filename="qr-${sucursal.nombre}.png"`);
     res.send(png);

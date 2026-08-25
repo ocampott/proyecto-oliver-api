@@ -27,7 +27,9 @@ app.use(
   })
 );
 app.use(cookieParser());
-app.use(express.json());
+// 100kb alcanza y sobra para los bodies de esta API (spec §2.5) — corta
+// requests gigantes antes de que lleguen a cualquier handler.
+app.use(express.json({ limit: "100kb" }));
 
 app.get("/api/health", (_req, res) => res.json({ ok: true }));
 

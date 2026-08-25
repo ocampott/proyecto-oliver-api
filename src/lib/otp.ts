@@ -1,8 +1,8 @@
 import { randomInt } from "node:crypto";
 import { createServiceClient } from "./supabase-service.js";
+import { evaluarOtp, type EvaluarOtpResult } from "./otp-logica.js";
 
 const OTP_TTL_MINUTOS = 10;
-const OTP_MAX_INTENTOS = 5;
 export const CANAL_ASISTENCIA_WEB = "asistencia_web";
 
 export interface OtpCode {
@@ -58,9 +58,7 @@ export async function generarOtp(orgId: string, empleadoId: string): Promise<str
   return code;
 }
 
-export type VerificarOtpResult =
-  | { ok: true }
-  | { ok: false; motivo: "incorrecto" | "expirado" | "bloqueado" };
+export type VerificarOtpResult = EvaluarOtpResult;
 
 export async function verificarOtp(
   empleadoId: string,
@@ -79,27 +77,23 @@ export async function verificarOtp(
     .maybeSingle();
   if (error) throw error;
 
-  if (!otp || new Date(otp.expires_at) < new Date()) {
-    return { ok: false, motivo: "expirado" };
-  }
-  if (otp.intentos >= OTP_MAX_INTENTOS) {
-    return { ok: false, motivo: "bloqueado" };
-  }
-  if (otp.code !== code.trim()) {
+  const resultado = evaluarOtp(otp, code);
+
+  if (resultado.ok) {
+    const { error: useErr } = await service
+      .from("otp_codes")
+      .update({ used_at: new Date().toISOString() })
+      .eq("id", otp!.id);
+    if (useErr) throw useErr;
+  } else if (resultado.motivo === "incorrecto") {
     const { error: updErr } = await service
       .from("otp_codes")
-      .update({ intentos: otp.intentos + 1 })
-      .eq("id", otp.id);
+      .update({ intentos: otp!.intentos + 1 })
+      .eq("id", otp!.id);
     if (updErr) throw updErr;
-    return { ok: false, motivo: "incorrecto" };
   }
 
-  const { error: useErr } = await service
-    .from("otp_codes")
-    .update({ used_at: new Date().toISOString() })
-    .eq("id", otp.id);
-  if (useErr) throw useErr;
-  return { ok: true };
+  return resultado;
 }
 
 /** OTP vigente (no usado, no expirado) del empleado, para mostrar al admin. */
