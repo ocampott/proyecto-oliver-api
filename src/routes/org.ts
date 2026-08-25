@@ -4,7 +4,7 @@ import { requireOrg } from "../middleware/require-org.js";
 import { requireRole } from "../middleware/require-role.js";
 import { getCurrentOrg } from "../lib/org.js";
 import { getEntitlements } from "../lib/planes.js";
-import { updateOrganization } from "../lib/organizations.js";
+import { updateOrganization, getOrgResumen } from "../lib/organizations.js";
 import { listMiembros, invitarMiembro, eliminarMiembro } from "../lib/miembros.js";
 
 export const orgRouter = Router();
@@ -40,6 +40,11 @@ orgRouter.patch(
     res.json(org);
   }
 );
+
+orgRouter.get("/org/resumen", requireAuth, requireOrg, async (req: Request, res: Response) => {
+  const resumen = await getOrgResumen(req.org!.id);
+  res.json(resumen);
+});
 
 orgRouter.get("/org/miembros", requireAuth, requireOrg, requireRole("owner", "admin"), async (req: Request, res: Response) => {
   const miembros = await listMiembros(req.org!.id);
