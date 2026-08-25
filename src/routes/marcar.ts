@@ -6,6 +6,7 @@ import {
   buscarEnNomina,
   getEmpleadoById,
   vincularDispositivo,
+  nombreCompleto,
 } from "../lib/empleados.js";
 import { getDeviceToken, nuevoDeviceToken, setDeviceCookie } from "../lib/device-token.js";
 import { generarOtp, verificarOtp } from "../lib/otp.js";
@@ -40,7 +41,7 @@ marcarRouter.get(
 
     const token = getDeviceToken(req as unknown as Request);
     const empleado = token ? await getEmpleadoByToken(token) : null;
-    const nombre = empleado && empleado.org_id === org.id ? empleado.nombre : null;
+    const nombre = empleado && empleado.org_id === org.id ? nombreCompleto(empleado) : null;
 
     res.json({ sucursalNombre: sucursal.nombre, empleadoNombre: nombre });
   }
@@ -93,7 +94,7 @@ marcarRouter.post("/marcar/identificar", validateBody(identificarSchema), async 
   }
 
   if (!exacto) {
-    res.json({ sugerencia: empleado.nombre });
+    res.json({ sugerencia: nombreCompleto(empleado) });
     return;
   }
 

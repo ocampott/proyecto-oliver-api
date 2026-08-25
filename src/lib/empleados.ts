@@ -23,6 +23,7 @@ export async function listEmpleados(orgId: string): Promise<(Empleado & { tiene_
     .from("empleados")
     .select("*")
     .eq("org_id", orgId)
+    .order("apellido")
     .order("nombre");
   if (error) throw error;
 
@@ -257,6 +258,11 @@ export interface ResultadoNomina {
   exacto: boolean;
 }
 
+/** Nombre completo para mostrar/comparar: "Apellido Nombre" (sin apellido cae a solo el nombre). */
+export function nombreCompleto(e: Pick<Empleado, "nombre" | "apellido">): string {
+  return `${e.apellido ?? ""} ${e.nombre}`.trim();
+}
+
 export async function buscarEnNomina(
   orgId: string,
   input: string
@@ -269,7 +275,6 @@ export async function buscarEnNomina(
     .in("estado", ["activo", "de_licencia"]);
   if (error) throw error;
 
-  const nombreCompleto = (e: Empleado) => `${e.apellido ?? ""} ${e.nombre}`.trim();
   const nombres = activos.map(nombreCompleto);
 
   const exacto = validarEmpleado(nombres, input);

@@ -128,7 +128,7 @@ empleadosRouter.delete(
       return;
     }
     if (empleado.estado !== "baja") {
-      res.status(400).json({ error: "Desactivá al empleado antes de eliminarlo" });
+      res.status(400).json({ error: "Dá de baja al empleado antes de eliminarlo." });
       return;
     }
     if (await tieneAsistencia(req.org!.id, id)) {
