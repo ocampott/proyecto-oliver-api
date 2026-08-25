@@ -1,13 +1,15 @@
 import { Router, type Request, type Response } from "express";
+import type { z } from "zod";
 import { requireAuth } from "../middleware/auth.js";
 import { requireOrg } from "../middleware/require-org.js";
 import { requireRole } from "../middleware/require-role.js";
+import { validateBody } from "../lib/validation.js";
+import { crearEmpleadoSchema, editarEmpleadoSchema } from "./empleados.schemas.js";
 import {
   listEmpleados,
   createEmpleadoConLimite,
   reactivarEmpleadoConLimite,
   updateEmpleado,
-  setEmpleadoActivo,
   desvincularDispositivo,
   getEmpleadoScoped,
   tieneAsistencia,
@@ -16,16 +18,8 @@ import {
 import { getEntitlements, esErrorLimitePlan } from "../lib/planes.js";
 import { getOtpVigente, generarOtp } from "../lib/otp.js";
 
-interface CrearBody {
-  nombre?: string;
-  celular?: string;
-}
-
-interface EditarBody {
-  nombre?: string;
-  celular?: string | null;
-  activo?: boolean;
-}
+type CrearBody = z.infer<typeof crearEmpleadoSchema>;
+type EditarBody = z.infer<typeof editarEmpleadoSchema>;
 
 export const empleadosRouter = Router();
 
@@ -46,24 +40,25 @@ empleadosRouter.post(
   requireAuth,
   requireOrg,
   requireRole("owner", "admin"),
+  validateBody(crearEmpleadoSchema),
   async (req: Request<unknown, unknown, CrearBody>, res: Response) => {
-    const { nombre, celular } = req.body ?? {};
-    if (!nombre?.trim()) {
-      res.status(400).json({ error: "El nombre es requerido" });
-      return;
-    }
+    const { nombre, apellido, celular, cuil, fecha_ingreso, sucursal_id } = req.body;
 
     const ent = await getEntitlements(req, req.org!);
     try {
       const empleado = await createEmpleadoConLimite(
         req.org!.id,
-        { nombre: nombre.trim(), celular: celular?.trim() || undefined },
+        { nombre, apellido, celular, cuil, fecha_ingreso, sucursal_id },
         ent.maxEmpleados
       );
       res.status(201).json(empleado);
     } catch (e) {
       if (esErrorLimitePlan(e)) {
         res.status(403).json({ error: "limite_plan", recurso: "empleados", max: ent.maxEmpleados });
+        return;
+      }
+      if (e instanceof Error && e.message === "cuil_duplicado") {
+        res.status(409).json({ error: "Ya existe un empleado con ese CUIL en esta organización." });
         return;
       }
       throw e;
@@ -76,36 +71,45 @@ empleadosRouter.patch(
   requireAuth,
   requireOrg,
   requireRole("owner", "admin"),
+  validateBody(editarEmpleadoSchema),
   async (req: Request<{ id: string }, unknown, EditarBody>, res: Response) => {
     const { id } = req.params;
-    const body = req.body ?? {};
+    const body = req.body;
 
-    if (typeof body.activo === "boolean") {
-      if (body.activo) {
-        const ent = await getEntitlements(req, req.org!);
-        try {
-          await reactivarEmpleadoConLimite(req.org!.id, id, ent.maxEmpleados);
-        } catch (e) {
-          if (esErrorLimitePlan(e)) {
-            res.status(403).json({ error: "limite_plan", recurso: "empleados", max: ent.maxEmpleados });
-            return;
-          }
-          res.status(404).json({ error: "Empleado no encontrado" });
+    if (body.estado !== undefined) {
+      const ent = await getEntitlements(req, req.org!);
+      try {
+        await reactivarEmpleadoConLimite(req.org!.id, id, body.estado, ent.maxEmpleados);
+      } catch (e) {
+        if (esErrorLimitePlan(e)) {
+          res.status(403).json({ error: "limite_plan", recurso: "empleados", max: ent.maxEmpleados });
           return;
         }
-      } else {
-        await setEmpleadoActivo(req.org!.id, id, false);
+        res.status(404).json({ error: "Empleado no encontrado" });
+        return;
       }
     }
 
-    const patch: { nombre?: string; celular?: string | null } = {};
-    if (typeof body.nombre === "string" && body.nombre.trim()) patch.nombre = body.nombre.trim();
-    if (body.celular !== undefined) patch.celular = body.celular?.trim() || null;
+    const patch: Parameters<typeof updateEmpleado>[2] = {};
+    if (body.nombre !== undefined) patch.nombre = body.nombre;
+    if (body.apellido !== undefined) patch.apellido = body.apellido;
+    if (body.celular !== undefined) patch.celular = body.celular;
+    if (body.cuil !== undefined) patch.cuil = body.cuil;
+    if (body.fecha_ingreso !== undefined) patch.fecha_ingreso = body.fecha_ingreso;
+    if (body.sucursal_id !== undefined) patch.sucursal_id = body.sucursal_id;
 
     if (Object.keys(patch).length > 0) {
-      const empleado = await updateEmpleado(req.org!.id, id, patch);
-      res.json(empleado);
-      return;
+      try {
+        const empleado = await updateEmpleado(req.org!.id, id, patch);
+        res.json(empleado);
+        return;
+      } catch (e) {
+        if (e instanceof Error && e.message === "cuil_duplicado") {
+          res.status(409).json({ error: "Ya existe un empleado con ese CUIL en esta organización." });
+          return;
+        }
+        throw e;
+      }
     }
     res.json({ ok: true });
   }
@@ -123,7 +127,7 @@ empleadosRouter.delete(
       res.status(404).json({ error: "Empleado no encontrado" });
       return;
     }
-    if (empleado.activo) {
+    if (empleado.estado !== "baja") {
       res.status(400).json({ error: "Desactivá al empleado antes de eliminarlo" });
       return;
     }
