@@ -131,7 +131,7 @@ marcarRouter.post("/marcar/verificar", validateBody(verificarSchema), async (req
   await vincularDispositivo(empleado.org_id, empleado.id, token);
   setDeviceCookie(res, token);
 
-  res.json({ ok: true, nombre: empleado.nombre });
+  res.json({ ok: true, nombre: nombreCompleto(empleado) });
 });
 
 /**
