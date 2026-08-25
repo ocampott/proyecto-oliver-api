@@ -4,6 +4,9 @@ import { requirePlatformAdmin } from "../middleware/require-platform-admin.js";
 import { createServiceClient } from "../lib/supabase-service.js";
 import { createOrganization, updateOrganization, getOrgResumen } from "../lib/organizations.js";
 import { PERIODOS, PLANES, type PlanSlug } from "../lib/planes.js";
+import { listMiembros } from "../lib/miembros.js";
+import { listEmpleados } from "../lib/empleados.js";
+import { listSucursales } from "../lib/sucursales.js";
 
 interface OrganizationRow {
   id: string;
@@ -121,6 +124,36 @@ adminRouter.get(
   async (req: Request<{ id: string }>, res: Response) => {
     const resumen = await getOrgResumen(req.params.id);
     res.json(resumen);
+  }
+);
+
+adminRouter.get(
+  "/admin/organizations/:id/miembros",
+  requireAuth,
+  requirePlatformAdmin,
+  async (req: Request<{ id: string }>, res: Response) => {
+    const miembros = await listMiembros(req.params.id);
+    res.json(miembros);
+  }
+);
+
+adminRouter.get(
+  "/admin/organizations/:id/empleados",
+  requireAuth,
+  requirePlatformAdmin,
+  async (req: Request<{ id: string }>, res: Response) => {
+    const empleados = await listEmpleados(req.params.id);
+    res.json(empleados);
+  }
+);
+
+adminRouter.get(
+  "/admin/organizations/:id/sucursales",
+  requireAuth,
+  requirePlatformAdmin,
+  async (req: Request<{ id: string }>, res: Response) => {
+    const sucursales = await listSucursales(req.params.id);
+    res.json(sucursales);
   }
 );
 
