@@ -28,7 +28,7 @@ export async function listEmpleados(orgId: string): Promise<(Empleado & { tiene_
 
   // Igual que en sucursales.ts: solo hace falta saber esto para los
   // inactivos (es lo único que usa el botón de eliminar).
-  const inactivos = data.filter((e) => !e.activo);
+  const inactivos = data.filter((e) => e.estado === "baja");
   const flags = await Promise.all(inactivos.map((e) => tieneAsistencia(orgId, e.id)));
   const conAsistencia = new Set(inactivos.filter((_, i) => flags[i]).map((e) => e.id));
 

@@ -109,7 +109,7 @@ marcarRouter.post("/marcar/verificar", validateBody(verificarSchema), async (req
   const { empleadoId, code } = req.body as { empleadoId: string; code: string };
 
   const empleado = await getEmpleadoById(empleadoId);
-  if (!empleado || !empleado.activo) {
+  if (!empleado || !["activo", "de_licencia"].includes(empleado.estado)) {
     res.status(404).json({ error: "Empleado no encontrado" });
     return;
   }
