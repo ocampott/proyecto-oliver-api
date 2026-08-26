@@ -1,6 +1,7 @@
 import { createServiceClient } from "./supabase-service.js";
 import { env } from "../env.js";
 import type { OrgRole } from "./org.js";
+import { rangeFor, buildMeta, type PaginationParams, type Paginated } from "./pagination.js";
 
 export interface Miembro {
   userId: string;
@@ -44,6 +45,35 @@ export async function listMiembros(orgId: string): Promise<Miembro[]> {
     })
   );
   return miembros;
+}
+
+export async function listMiembrosPaginado(orgId: string, params: PaginationParams): Promise<Paginated<Miembro>> {
+  const service = createServiceClient();
+  const { from, to } = rangeFor(params);
+
+  const { data, error, count } = await service
+    .from("org_members")
+    .select("user_id, role, created_at", { count: "exact" })
+    .eq("org_id", orgId)
+    .order("created_at")
+    .range(from, to);
+  if (error) throw error;
+
+  const rows = data as OrgMemberRow[];
+  const miembros = await Promise.all(
+    rows.map(async (row): Promise<Miembro> => {
+      const { data: userData, error: userErr } = await service.auth.admin.getUserById(row.user_id);
+      if (userErr) throw userErr;
+      return {
+        userId: row.user_id,
+        email: userData.user?.email ?? "(sin email)",
+        role: row.role,
+        createdAt: row.created_at,
+      };
+    })
+  );
+
+  return { data: miembros, pagination: buildMeta(params, count ?? 0) };
 }
 
 /**

@@ -2,20 +2,12 @@ import { Router, type Request, type Response } from "express";
 import { requireAuth } from "../middleware/auth.js";
 import { requirePlatformAdmin } from "../middleware/require-platform-admin.js";
 import { createServiceClient } from "../lib/supabase-service.js";
-import { createOrganization, updateOrganization, getOrgResumen } from "../lib/organizations.js";
+import { createOrganization, updateOrganization, getOrgResumen, listOrganizations, getOrganization } from "../lib/organizations.js";
 import { PERIODOS, PLANES, type PlanSlug } from "../lib/planes.js";
-import { listMiembros } from "../lib/miembros.js";
-import { listEmpleados } from "../lib/empleados.js";
+import { listMiembrosPaginado } from "../lib/miembros.js";
+import { listEmpleadosPaginado } from "../lib/empleados.js";
 import { listSucursales } from "../lib/sucursales.js";
 import { parsePagination } from "../lib/pagination.js";
-
-interface OrganizationRow {
-  id: string;
-  name: string;
-  slug: string;
-  plan: string;
-  created_at: string;
-}
 
 interface CrearBody {
   name?: string;
@@ -67,14 +59,23 @@ adminRouter.get(
   "/admin/organizations",
   requireAuth,
   requirePlatformAdmin,
-  async (_req: Request, res: Response) => {
-    const service = createServiceClient();
-    const { data, error } = await service
-      .from("organizations")
-      .select("id, name, slug, plan, created_at")
-      .order("created_at", { ascending: false });
-    if (error) throw error;
-    res.json(data as OrganizationRow[]);
+  async (req: Request<Record<string, never>, unknown, unknown, { page?: string; pageSize?: string; q?: string }>, res: Response) => {
+    const result = await listOrganizations({ ...parsePagination(req.query), q: req.query.q });
+    res.json(result);
+  }
+);
+
+adminRouter.get(
+  "/admin/organizations/:id",
+  requireAuth,
+  requirePlatformAdmin,
+  async (req: Request<{ id: string }>, res: Response) => {
+    const org = await getOrganization(req.params.id);
+    if (!org) {
+      res.status(404).json({ error: "Organización no encontrada" });
+      return;
+    }
+    res.json(org);
   }
 );
 
@@ -132,9 +133,9 @@ adminRouter.get(
   "/admin/organizations/:id/miembros",
   requireAuth,
   requirePlatformAdmin,
-  async (req: Request<{ id: string }>, res: Response) => {
-    const miembros = await listMiembros(req.params.id);
-    res.json(miembros);
+  async (req: Request<{ id: string }, unknown, unknown, { page?: string; pageSize?: string }>, res: Response) => {
+    const result = await listMiembrosPaginado(req.params.id, parsePagination(req.query));
+    res.json(result);
   }
 );
 
@@ -142,9 +143,9 @@ adminRouter.get(
   "/admin/organizations/:id/empleados",
   requireAuth,
   requirePlatformAdmin,
-  async (req: Request<{ id: string }>, res: Response) => {
-    const empleados = await listEmpleados(req.params.id);
-    res.json(empleados);
+  async (req: Request<{ id: string }, unknown, unknown, { page?: string; pageSize?: string }>, res: Response) => {
+    const result = await listEmpleadosPaginado(req.params.id, parsePagination(req.query));
+    res.json(result);
   }
 );
 
