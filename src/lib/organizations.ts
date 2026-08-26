@@ -60,7 +60,7 @@ export async function listOrganizations(params: ListOrganizationsParams): Promis
     .range(from, to);
 
   if (params.q) {
-    const qSafe = params.q.trim().replace(/[%,]/g, "");
+    const qSafe = params.q.trim().replace(/[%,()]/g, "");
     if (qSafe) query = query.or(`name.ilike.%${qSafe}%,slug.ilike.%${qSafe}%`);
   }
 

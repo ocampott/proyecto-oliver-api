@@ -33,7 +33,7 @@ export async function listSucursales(
     .range(from, to);
 
   if (params.q) {
-    const qSafe = params.q.trim().replace(/[%,]/g, "");
+    const qSafe = params.q.trim().replace(/[%,()]/g, "");
     if (qSafe) query = query.ilike("nombre", `%${qSafe}%`);
   }
   if (params.estado === "activos") query = query.eq("activa", true);

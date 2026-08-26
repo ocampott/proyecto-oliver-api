@@ -61,7 +61,7 @@ export async function listEmpleadosPaginado(
     .range(from, to);
 
   if (params.q) {
-    const qSafe = params.q.trim().replace(/[%,]/g, "");
+    const qSafe = params.q.trim().replace(/[%,()]/g, "");
     if (qSafe) query = query.or(`nombre.ilike.%${qSafe}%,apellido.ilike.%${qSafe}%`);
   }
   if (params.estado) query = query.eq("estado", params.estado);
