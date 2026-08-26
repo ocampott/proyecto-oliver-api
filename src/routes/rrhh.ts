@@ -15,6 +15,7 @@ import {
 import { getEmpleadoById } from "../lib/empleados.js";
 import { getSucursal } from "../lib/sucursales.js";
 import { generarExcel, enviarExcel } from "../lib/excel.js";
+import { parsePagination } from "../lib/pagination.js";
 
 interface ListQuery {
   desde?: string;
@@ -22,6 +23,8 @@ interface ListQuery {
   sucursalId?: string;
   motivo?: string;
   empleadoId?: string;
+  page?: string;
+  pageSize?: string;
 }
 
 interface CrearAusenciaBody {
@@ -58,8 +61,24 @@ rrhhRouter.get(
   requireModulo("rrhh"),
   requireRole("owner", "admin"),
   async (req: Request<Record<string, never>, unknown, unknown, ListQuery>, res: Response) => {
-    const ausencias = await listAusencias(req.org!.id, req.query);
-    res.json({ ausencias, resumen: calcularResumenAusencias(ausencias) });
+    // Sin page/pageSize: mantiene la respuesta vieja ({ausencias, resumen},
+    // sin envolver ausencias en {data,pagination}) — la usa el widget
+    // "Ausencias hoy" del dashboard (useAusenciasHoy), que no pagina.
+    if (req.query.page === undefined && req.query.pageSize === undefined) {
+      const ausencias = await listAusencias(req.org!.id, req.query);
+      res.json({ ausencias, resumen: calcularResumenAusencias(ausencias) });
+      return;
+    }
+
+    const [todasFiltradas, pagina] = await Promise.all([
+      listAusencias(req.org!.id, req.query),
+      listAusencias(req.org!.id, req.query, parsePagination(req.query as unknown as Record<string, unknown>)),
+    ]);
+    res.json({
+      ausencias: pagina.data,
+      pagination: pagina.pagination,
+      resumen: calcularResumenAusencias(todasFiltradas),
+    });
   }
 );
 

@@ -1,4 +1,5 @@
 import { createServiceClient } from "./supabase-service.js";
+import { rangeFor, buildMeta, type PaginationParams, type Paginated } from "./pagination.js";
 
 // ── Ausencias y licencias ────────────────────────────────────────────────────
 // Reemplazo standalone del RRHH del repo externo (que parseaba mensajes de
@@ -43,12 +44,23 @@ function nombreDe(rel: { nombre: string } | { nombre: string }[] | null): string
 export async function listAusencias(
   orgId: string,
   filters?: { desde?: string; hasta?: string; sucursalId?: string; motivo?: string; empleadoId?: string }
-): Promise<Ausencia[]> {
+): Promise<Ausencia[]>;
+export async function listAusencias(
+  orgId: string,
+  filters: { desde?: string; hasta?: string; sucursalId?: string; motivo?: string; empleadoId?: string } | undefined,
+  params: PaginationParams
+): Promise<Paginated<Ausencia>>;
+export async function listAusencias(
+  orgId: string,
+  filters?: { desde?: string; hasta?: string; sucursalId?: string; motivo?: string; empleadoId?: string },
+  params?: PaginationParams
+): Promise<Ausencia[] | Paginated<Ausencia>> {
   const service = createServiceClient();
   let query = service
     .from("ausencias")
     .select(
-      "id, empleado_id, sucursal_id, fecha_desde, fecha_hasta, motivo, detalle, contacto, certificado_pendiente, created_at, empleados(nombre), sucursales(nombre)"
+      "id, empleado_id, sucursal_id, fecha_desde, fecha_hasta, motivo, detalle, contacto, certificado_pendiente, created_at, empleados(nombre), sucursales(nombre)",
+      params ? { count: "exact" } : undefined
     )
     .eq("org_id", orgId)
     .order("fecha_desde", { ascending: false });
@@ -58,10 +70,14 @@ export async function listAusencias(
   if (filters?.sucursalId) query = query.eq("sucursal_id", filters.sucursalId);
   if (filters?.motivo) query = query.eq("motivo", filters.motivo);
   if (filters?.empleadoId) query = query.eq("empleado_id", filters.empleadoId);
+  if (params) {
+    const { from, to } = rangeFor(params);
+    query = query.range(from, to);
+  }
 
-  const { data, error } = await query;
+  const { data, error, count } = await query;
   if (error) throw error;
-  return (data as AusenciaRow[]).map((r) => ({
+  const mapped = (data as AusenciaRow[]).map((r) => ({
     id: r.id,
     empleado_id: r.empleado_id,
     empleado_nombre: nombreDe(r.empleados) ?? "?",
@@ -75,6 +91,8 @@ export async function listAusencias(
     certificado_pendiente: r.certificado_pendiente,
     created_at: r.created_at,
   }));
+
+  return params ? { data: mapped, pagination: buildMeta(params, count ?? 0) } : mapped;
 }
 
 export async function insertAusencia(
