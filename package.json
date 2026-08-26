@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "tsx watch --env-file=.env.local src/index.ts",
     "build": "tsc",
-    "start": "node --env-file=.env.local dist/index.js",
+    "start": "node --env-file-if-exists=.env.local dist/index.js",
     "typecheck": "tsc --noEmit",
     "seed:demo": "node --env-file=.env.local scripts/seed-demo.js",
     "test": "vitest run",
