@@ -19,6 +19,7 @@ export interface Ausencia {
   detalle: string | null;
   contacto: string | null;
   certificado_pendiente: boolean;
+  origen: "admin" | "empleado";
   created_at: string;
 }
 
@@ -32,6 +33,7 @@ interface AusenciaRow {
   detalle: string | null;
   contacto: string | null;
   certificado_pendiente: boolean;
+  origen: "admin" | "empleado";
   created_at: string;
   empleados: { nombre: string } | { nombre: string }[] | null;
   sucursales: { nombre: string } | { nombre: string }[] | null;
@@ -59,7 +61,7 @@ export async function listAusencias(
   let query = service
     .from("ausencias")
     .select(
-      "id, empleado_id, sucursal_id, fecha_desde, fecha_hasta, motivo, detalle, contacto, certificado_pendiente, created_at, empleados(nombre), sucursales(nombre)",
+      "id, empleado_id, sucursal_id, fecha_desde, fecha_hasta, motivo, detalle, contacto, certificado_pendiente, origen, created_at, empleados(nombre), sucursales(nombre)",
       params ? { count: "exact" } : undefined
     )
     .eq("org_id", orgId)
@@ -89,6 +91,7 @@ export async function listAusencias(
     detalle: r.detalle,
     contacto: r.contacto,
     certificado_pendiente: r.certificado_pendiente,
+    origen: r.origen,
     created_at: r.created_at,
   }));
 
@@ -106,21 +109,28 @@ export async function insertAusencia(
     detalle?: string | null;
     contacto?: string | null;
     certificado_pendiente?: boolean;
+    origen?: "admin" | "empleado";
   }
-): Promise<void> {
+): Promise<string> {
   const service = createServiceClient();
-  const { error } = await service.from("ausencias").insert({
-    org_id: orgId,
-    empleado_id: input.empleado_id,
-    sucursal_id: input.sucursal_id ?? null,
-    fecha_desde: input.fecha_desde,
-    fecha_hasta: input.fecha_hasta,
-    motivo: input.motivo,
-    detalle: input.detalle ?? null,
-    contacto: input.contacto ?? null,
-    certificado_pendiente: input.certificado_pendiente ?? false,
-  });
+  const { data, error } = await service
+    .from("ausencias")
+    .insert({
+      org_id: orgId,
+      empleado_id: input.empleado_id,
+      sucursal_id: input.sucursal_id ?? null,
+      fecha_desde: input.fecha_desde,
+      fecha_hasta: input.fecha_hasta,
+      motivo: input.motivo,
+      detalle: input.detalle ?? null,
+      contacto: input.contacto ?? null,
+      certificado_pendiente: input.certificado_pendiente ?? false,
+      origen: input.origen ?? "admin",
+    })
+    .select("id")
+    .single();
   if (error) throw error;
+  return data.id;
 }
 
 export async function updateAusencia(

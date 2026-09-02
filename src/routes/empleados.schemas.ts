@@ -40,4 +40,8 @@ export const editarEmpleadoSchema = z.object({
   fecha_ingreso: z.string().date().nullable().optional(),
   sucursal_id: z.string().trim().min(1).nullable().optional(),
   estado: z.enum(["activo", "de_licencia", "suspendido", "baja"]).optional(),
+  tipo_pago: z.enum(["mensual", "hora", "dia"]).nullable().optional(),
+  sueldo_mensual: z.number().nonnegative().nullable().optional(),
+  valor_hora: z.number().nonnegative().nullable().optional(),
+  valor_dia: z.number().nonnegative().nullable().optional(),
 });

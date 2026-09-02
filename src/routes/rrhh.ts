@@ -16,6 +16,7 @@ import { getEmpleadoById } from "../lib/empleados.js";
 import { getSucursal } from "../lib/sucursales.js";
 import { generarExcel, enviarExcel } from "../lib/excel.js";
 import { parsePagination } from "../lib/pagination.js";
+import { listAvisosUrgentes } from "../lib/chat-empleado.js";
 
 interface ListQuery {
   desde?: string;
@@ -53,6 +54,17 @@ interface CategoriasBody {
 }
 
 export const rrhhRouter = Router();
+
+rrhhRouter.get(
+  "/rrhh/avisos-urgentes",
+  requireAuth,
+  requireOrg,
+  requireModulo("rrhh"),
+  requireRole("owner", "admin"),
+  async (req: Request, res: Response) => {
+    res.json(await listAvisosUrgentes(req.org!.id));
+  }
+);
 
 rrhhRouter.get(
   "/ausencias",

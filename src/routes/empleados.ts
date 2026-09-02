@@ -139,6 +139,10 @@ empleadosRouter.patch(
     if (body.cuil !== undefined) patch.cuil = body.cuil;
     if (body.fecha_ingreso !== undefined) patch.fecha_ingreso = body.fecha_ingreso;
     if (body.sucursal_id !== undefined) patch.sucursal_id = body.sucursal_id;
+    if (body.tipo_pago !== undefined) patch.tipo_pago = body.tipo_pago;
+    if (body.sueldo_mensual !== undefined) patch.sueldo_mensual = body.sueldo_mensual;
+    if (body.valor_hora !== undefined) patch.valor_hora = body.valor_hora;
+    if (body.valor_dia !== undefined) patch.valor_dia = body.valor_dia;
 
     if (Object.keys(patch).length > 0) {
       try {
