@@ -32,6 +32,8 @@ function horaAMinutos(hora: string): number {
 }
 
 export interface HorarioParaMatch {
+  /** Opcional: sin id no se puede derivar `horario_id` en CumplimientoRow (ver calcularAusenciasPuro en ausencias-calculo.ts). */
+  id?: string;
   empleado_id: string;
   dia_semana: number;
   hora_inicio: string;
@@ -53,6 +55,8 @@ export interface CumplimientoRow {
   en_curso: boolean;
   estado: "a_horario" | "tarde" | "salida_anticipada" | "tarde_y_anticipada" | "sin_horario";
   tolerancia_aplicada: number | null;
+  /** horarios_empleado.id cubierto por este turno — null si no matcheó ningún horario (estado 'sin_horario') o si `horarios` no trajo `id`. */
+  horario_id: string | null;
 }
 
 /**
@@ -107,6 +111,7 @@ export function calcularCumplimientoPuro(
         en_curso: t.salida_at === null,
         estado: "sin_horario",
         tolerancia_aplicada: null,
+        horario_id: null,
       };
     }
 
@@ -141,6 +146,7 @@ export function calcularCumplimientoPuro(
       en_curso: t.salida_at === null,
       estado,
       tolerancia_aplicada: tolerancia,
+      horario_id: horario.id ?? null,
     };
   });
 }

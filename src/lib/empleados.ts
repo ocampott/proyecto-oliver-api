@@ -4,6 +4,8 @@ import { rangeFor, buildMeta, type PaginationParams, type Paginated } from "./pa
 
 export type EstadoEmpleado = "activo" | "de_licencia" | "suspendido" | "baja";
 
+export type TipoPago = "mensual" | "hora" | "dia";
+
 export interface Empleado {
   id: string;
   org_id: string;
@@ -16,6 +18,10 @@ export interface Empleado {
   device_token: string | null;
   estado: EstadoEmpleado;
   created_at: string;
+  tipo_pago: TipoPago | null;
+  sueldo_mensual: number | null;
+  valor_hora: number | null;
+  valor_dia: number | null;
 }
 
 export async function listEmpleados(orgId: string): Promise<(Empleado & { tiene_asistencia: boolean })[]> {
@@ -183,6 +189,10 @@ export async function updateEmpleado(
     cuil?: string | null;
     fecha_ingreso?: string | null;
     sucursal_id?: string | null;
+    tipo_pago?: TipoPago | null;
+    sueldo_mensual?: number | null;
+    valor_hora?: number | null;
+    valor_dia?: number | null;
   }
 ): Promise<Empleado> {
   const service = createServiceClient();

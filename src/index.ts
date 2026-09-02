@@ -15,6 +15,10 @@ import { rrhhRouter } from "./routes/rrhh.js";
 import { adminRouter } from "./routes/admin.js";
 import { planesRouter } from "./routes/planes.js";
 import { placesRouter } from "./routes/places.js";
+import { liquidacionRouter } from "./routes/liquidacion.js";
+import { legajosRouter } from "./routes/legajos.js";
+import { vacacionesRouter } from "./routes/vacaciones.js";
+import { chatRouter } from "./routes/chat.js";
 
 const app = express();
 
@@ -45,6 +49,10 @@ app.use("/api", rrhhRouter);
 app.use("/api", adminRouter);
 app.use("/api", planesRouter);
 app.use("/api", placesRouter);
+app.use("/api", liquidacionRouter);
+app.use("/api", legajosRouter);
+app.use("/api", vacacionesRouter);
+app.use("/api", chatRouter);
 
 app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
   console.error(err);

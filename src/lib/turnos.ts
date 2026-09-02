@@ -5,8 +5,10 @@ import {
   type CumplimientoRow,
   type HorarioParaMatch,
 } from "./cumplimiento-calculo.js";
+import { calcularAusenciasPuro, type AusenciaInferida } from "./ausencias-calculo.js";
+import { listAusencias } from "./rrhh.js";
 
-export type { CumplimientoRow };
+export type { CumplimientoRow, AusenciaInferida };
 
 // ── Horarios esperados por empleado ─────────────────────────────────────────
 // Franjas definidas a mano (día de semana + hora inicio/fin). Un empleado
@@ -261,4 +263,35 @@ export async function calcularCumplimiento(
   const horarios = horariosRes.data as HorarioParaMatch[];
 
   return calcularCumplimientoPuro(turnosTodos, horarios, toleranciaGeneral, filters.empleadoId);
+}
+
+// ── Ausencias inferidas ──────────────────────────────────────────────────────
+// El cálculo (qué horario pactado quedó sin turno que lo cubra) es lógica
+// pura y vive en ausencias-calculo.ts. Acá solo se hace el fetch y se delega.
+
+export async function calcularAusencias(
+  orgId: string,
+  filters: { desde: string; hasta: string; empleadoId?: string }
+): Promise<AusenciaInferida[]> {
+  const service = createServiceClient();
+
+  const [cumplimiento, horariosRes, ausencias] = await Promise.all([
+    calcularCumplimiento(orgId, filters),
+    service
+      .from("horarios_empleado")
+      .select("id, empleado_id, dia_semana, hora_inicio, hora_fin, tolerancia_min")
+      .eq("org_id", orgId),
+    listAusencias(orgId, { desde: filters.desde, hasta: filters.hasta, empleadoId: filters.empleadoId }),
+  ]);
+  if (horariosRes.error) throw horariosRes.error;
+  let horarios = horariosRes.data as (HorarioParaMatch & { id: string })[];
+  if (filters.empleadoId) horarios = horarios.filter((h) => h.empleado_id === filters.empleadoId);
+
+  const rangosPorEmpleado = new Map<string, { fecha_desde: string; fecha_hasta: string }[]>();
+  for (const a of ausencias) {
+    if (!rangosPorEmpleado.has(a.empleado_id)) rangosPorEmpleado.set(a.empleado_id, []);
+    rangosPorEmpleado.get(a.empleado_id)!.push({ fecha_desde: a.fecha_desde, fecha_hasta: a.fecha_hasta });
+  }
+
+  return calcularAusenciasPuro(filters, horarios, cumplimiento, rangosPorEmpleado, new Date().toISOString());
 }
