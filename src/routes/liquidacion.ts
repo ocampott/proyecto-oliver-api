@@ -3,7 +3,8 @@ import { requireAuth } from "../middleware/auth.js";
 import { requireOrg } from "../middleware/require-org.js";
 import { requireModulo } from "../middleware/require-modulo.js";
 import { requireRole } from "../middleware/require-role.js";
-import { calcularLiquidacion } from "../lib/liquidacion.js";
+import { liquidacionRevisable } from "../lib/operacion.js";
+import { validarRango } from "../lib/operacion-validacion.js";
 import { generarExcel, enviarExcel } from "../lib/excel.js";
 
 function hoyISO(): string {
@@ -22,8 +23,7 @@ interface Query {
 
 function parseFilters(query: Query): { desde: string; hasta: string; empleadoIds?: string[] } {
   return {
-    desde: query.desde ?? inicioDeMesISO(),
-    hasta: query.hasta ?? hoyISO(),
+    ...validarRango({ desde: query.desde ?? inicioDeMesISO(), hasta: query.hasta ?? hoyISO() }),
     empleadoIds: query.empleadoIds?.split(",").filter(Boolean),
   };
 }
@@ -38,8 +38,8 @@ liquidacionRouter.get(
   requireRole("owner", "admin"),
   async (req: Request<Record<string, never>, unknown, unknown, Query>, res: Response) => {
     const filters = parseFilters(req.query);
-    const filas = await calcularLiquidacion(req.org!.id, filters);
-    res.json({ desde: filters.desde, hasta: filters.hasta, filas });
+    const resultado = await liquidacionRevisable(req.org!.id, filters);
+    res.json(resultado);
   }
 );
 
@@ -51,7 +51,7 @@ liquidacionRouter.get(
   requireRole("owner", "admin"),
   async (req: Request<Record<string, never>, unknown, unknown, Query>, res: Response) => {
     const filters = parseFilters(req.query);
-    const filas = await calcularLiquidacion(req.org!.id, filters);
+    const { filas } = await liquidacionRevisable(req.org!.id, filters);
 
     const buffer = await generarExcel([
       {

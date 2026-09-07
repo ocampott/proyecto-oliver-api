@@ -1,3 +1,4 @@
+import { readAll } from "./read-all.js";
 import { createServiceClient } from "./supabase-service.js";
 import { dentroDeGeocerca } from "./geo.js";
 import type { Sucursal } from "./sucursales.js";
@@ -315,11 +316,10 @@ export async function calcularHoras(
     .eq("org_id", orgId)
     .gte("created_at", ventana.desdeConMargen)
     .lte("created_at", ventana.hastaConMargen)
-    .order("created_at", { ascending: true });
+    .order("created_at", { ascending: true }).order("id");
   if (filters.sucursalId) query = query.eq("sucursal_id", filters.sucursalId);
 
-  const { data, error } = await query;
-  if (error) throw error;
+  const data = await readAll((from, to) => query.range(from, to));
 
   // supabase-js tipa los joins como array; con FK many-to-one viene un solo
   // elemento (o el objeto, según la versión).

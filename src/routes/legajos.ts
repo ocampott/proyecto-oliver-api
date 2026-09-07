@@ -1,3 +1,4 @@
+import { createServiceClient } from "../lib/supabase-service.js";
 import { Router, type Request, type Response } from "express";
 import multer from "multer";
 import { requireAuth } from "../middleware/auth.js";
@@ -97,7 +98,7 @@ legajosRouter.get(
   requireModulo("rrhh"),
   requireRole("owner", "admin"),
   async (req: Request<{ empleadoId: string; archivoId: string }>, res: Response) => {
-    const archivo = await getLegajoArchivo(req.org!.id, req.params.archivoId);
+    const archivo = await getLegajoArchivo(req.org!.id, String(req.params.archivoId));
     if (!archivo || archivo.empleado_id !== req.params.empleadoId) {
       res.status(404).json({ error: "Archivo no encontrado" });
       return;
@@ -116,7 +117,7 @@ legajosRouter.delete(
   requireModulo("rrhh"),
   requireRole("owner", "admin"),
   async (req: Request<{ empleadoId: string; archivoId: string }>, res: Response) => {
-    const archivo = await getLegajoArchivo(req.org!.id, req.params.archivoId);
+    const archivo = await getLegajoArchivo(req.org!.id, String(req.params.archivoId));
     if (!archivo || archivo.empleado_id !== req.params.empleadoId) {
       res.status(404).json({ error: "Archivo no encontrado" });
       return;
@@ -125,3 +126,21 @@ legajosRouter.delete(
     res.json({ ok: true });
   }
 );
+
+
+// Compartir es explícito; nunca hacer públicos todos los documentos del legajo.
+legajosRouter.patch("/legajos/:empleadoId/:archivoId/visibilidad",
+  requireAuth, requireOrg, requireModulo("rrhh"), requireRole("owner", "admin"),
+  async (req, res) => {
+    if (typeof req.body?.visible_empleado !== "boolean") {
+      res.status(400).json({ error: "Visibilidad inválida." }); return;
+    }
+    const archivo = await getLegajoArchivo(req.org!.id, String(req.params.archivoId));
+    if (!archivo || archivo.empleado_id !== req.params.empleadoId) {
+      res.status(404).json({ error: "Archivo no encontrado." }); return;
+    }
+    const { error } = await createServiceClient().from("legajo_archivos")
+      .update({ visible_empleado: req.body.visible_empleado }).eq("org_id", req.org!.id).eq("id", archivo.id);
+    if (error) throw error;
+    res.json({ ok: true });
+  });
