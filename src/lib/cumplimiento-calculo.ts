@@ -39,6 +39,12 @@ export interface HorarioParaMatch {
   hora_inicio: string;
   hora_fin: string;
   tolerancia_min: number | null;
+  /** Si está seteado, este horario es un TURNO PUNTUAL: aplica solo esa
+   * fecha exacta (ej. "domingo por medio") en vez de repetirse cada semana
+   * por `dia_semana`. Se matchea por fecha en vez de día — no participa del
+   * cruce de medianoche con el día anterior (candidatosAyerNocturno), a
+   * diferencia de un horario recurrente. */
+  fecha?: string;
 }
 
 export interface CumplimientoRow {
@@ -47,9 +53,11 @@ export interface CumplimientoRow {
   sucursal_nombre: string;
   fecha: string;
   entrada_real: string;
+  entrada_id: string;
   entrada_esperada: string | null;
   diff_entrada_min: number | null;
   salida_real: string | null;
+  salida_id: string | null;
   salida_esperada: string | null;
   diff_salida_min: number | null;
   en_curso: boolean;
@@ -77,6 +85,7 @@ export function calcularCumplimientoPuro(
     const dia = diaSemanaAR(t.entrada_at);
     const diaAnterior = (dia + 6) % 7;
     const entradaMin = minutosDelDia(t.entrada_at);
+    const fechaTurno = fechaAR(t.entrada_at);
 
     // Turnos nocturnos (hora_fin <= hora_inicio, ej. 22:00→06:00) se cargan
     // bajo el día en que ARRANCAN. Si el empleado marca después de
@@ -84,12 +93,13 @@ export function calcularCumplimientoPuro(
     // poder emparejarla con el turno nocturno de "ayer" se suman 1440 min
     // al comparar, y se toma el candidato (de hoy o de ayer) más cercano.
     const candidatosHoy = horarios
-      .filter((h) => h.empleado_id === t.empleado_id && h.dia_semana === dia)
+      .filter((h) => h.empleado_id === t.empleado_id && (h.fecha ? h.fecha === fechaTurno : h.dia_semana === dia))
       .map((h) => ({ h, diff: entradaMin - horaAMinutos(h.hora_inicio) }));
     const candidatosAyerNocturno = horarios
       .filter(
         (h) =>
           h.empleado_id === t.empleado_id &&
+          !h.fecha &&
           h.dia_semana === diaAnterior &&
           horaAMinutos(h.hora_fin) <= horaAMinutos(h.hora_inicio)
       )
@@ -103,9 +113,11 @@ export function calcularCumplimientoPuro(
         sucursal_nombre: t.sucursal_nombre,
         fecha: fechaAR(t.entrada_at),
         entrada_real: t.entrada_at,
+        entrada_id: t.entrada_id,
         entrada_esperada: null,
         diff_entrada_min: null,
         salida_real: t.salida_at,
+        salida_id: t.salida_id,
         salida_esperada: null,
         diff_salida_min: null,
         en_curso: t.salida_at === null,
@@ -138,9 +150,11 @@ export function calcularCumplimientoPuro(
       sucursal_nombre: t.sucursal_nombre,
       fecha: fechaAR(t.entrada_at),
       entrada_real: t.entrada_at,
+      entrada_id: t.entrada_id,
       entrada_esperada: horario.hora_inicio,
       diff_entrada_min: diffEntrada,
       salida_real: t.salida_at,
+      salida_id: t.salida_id,
       salida_esperada: horario.hora_fin,
       diff_salida_min: diffSalida,
       en_curso: t.salida_at === null,

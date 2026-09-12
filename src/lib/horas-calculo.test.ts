@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { calcularResumenHoras, emparejarTurnos, ventanaConMargen, type Turno } from "./horas-calculo.js";
+import {
+  calcularResumenHoras,
+  emparejarTurnos,
+  buscarSalidasHuerfanas,
+  ventanaConMargen,
+  type Turno,
+} from "./horas-calculo.js";
+
+let nextId = 1;
 
 function reg(
   empleado_id: string,
@@ -8,6 +16,7 @@ function reg(
   extra: Partial<{ sucursal_id: string; nombre: string; sucursal_nombre: string }> = {}
 ) {
   return {
+    id: `r${nextId++}`,
     empleado_id,
     sucursal_id: extra.sucursal_id ?? "suc-1",
     tipo,
@@ -85,6 +94,30 @@ describe("emparejarTurnos", () => {
   });
 });
 
+describe("buscarSalidasHuerfanas", () => {
+  it("detecta una salida sin entrada previa", () => {
+    const huerfanas = buscarSalidasHuerfanas([reg("e1", "salida", "2026-08-10T12:00:00.000Z")]);
+    expect(huerfanas).toHaveLength(1);
+    expect(huerfanas[0].tipo).toBe("salida");
+  });
+
+  it("no marca como huérfana una salida que sí empareja con una entrada", () => {
+    const huerfanas = buscarSalidasHuerfanas([
+      reg("e1", "entrada", "2026-08-10T12:00:00.000Z"),
+      reg("e1", "salida", "2026-08-10T20:00:00.000Z"),
+    ]);
+    expect(huerfanas).toHaveLength(0);
+  });
+
+  it("la salida que supera el tope de 16hs también se considera huérfana", () => {
+    const huerfanas = buscarSalidasHuerfanas([
+      reg("e1", "entrada", "2026-08-10T08:00:00.000Z"),
+      reg("e1", "salida", "2026-08-11T04:00:00.000Z"),
+    ]);
+    expect(huerfanas).toHaveLength(1);
+  });
+});
+
 describe("calcularResumenHoras", () => {
   it("suma las horas cerradas y marca en curso si hay un turno abierto", () => {
     const turnos: Turno[] = [
@@ -94,7 +127,9 @@ describe("calcularResumenHoras", () => {
         sucursal_id: "s1",
         sucursal_nombre: "Centro",
         entrada_at: "2026-08-10T12:00:00.000Z",
+        entrada_id: "r1",
         salida_at: "2026-08-10T20:00:00.000Z",
+        salida_id: "r2",
         horas: 8,
       },
       {
@@ -103,7 +138,9 @@ describe("calcularResumenHoras", () => {
         sucursal_id: "s1",
         sucursal_nombre: "Centro",
         entrada_at: "2026-08-11T12:00:00.000Z",
+        entrada_id: "r3",
         salida_at: null,
+        salida_id: null,
         horas: null,
       },
     ];

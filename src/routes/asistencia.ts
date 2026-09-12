@@ -9,10 +9,18 @@ import {
   listRechazadas,
   aprobarRechazada,
   descartarRechazada,
+  crearMarcaManual,
+  editarAsistencia,
+  listHuerfanas,
   type MotivoRechazo,
+  type TipoMarca,
 } from "../lib/asistencia.js";
+import { getSucursal } from "../lib/sucursales.js";
+import { getEmpleadoById } from "../lib/empleados.js";
 import { generarExcel, enviarExcel } from "../lib/excel.js";
 import { parsePagination } from "../lib/pagination.js";
+import { validateBody } from "../lib/validation.js";
+import { crearManualSchema, editarAsistenciaSchema } from "./asistencia.schemas.js";
 
 const AR_TZ = "America/Argentina/Buenos_Aires";
 
@@ -94,6 +102,84 @@ asistenciaRouter.delete(
   }
 );
 
+asistenciaRouter.post(
+  "/asistencia",
+  requireAuth,
+  requireOrg,
+  requireRole("owner", "admin"),
+  validateBody(crearManualSchema),
+  async (req: Request, res: Response) => {
+    const { empleadoId, sucursalId, tipo, fechaHora } = req.body as {
+      empleadoId: string;
+      sucursalId: string;
+      tipo: TipoMarca;
+      fechaHora: string;
+    };
+
+    const [empleado, sucursal] = await Promise.all([
+      getEmpleadoById(empleadoId),
+      getSucursal(req.org!.id, sucursalId),
+    ]);
+    if (!empleado || empleado.org_id !== req.org!.id) {
+      res.status(404).json({ error: "Empleado no encontrado" });
+      return;
+    }
+    if (!sucursal) {
+      res.status(404).json({ error: "Sucursal no encontrada" });
+      return;
+    }
+
+    const asistencia = await crearMarcaManual(req.org!.id, { empleadoId, sucursalId, tipo, fechaHora });
+    res.status(201).json(asistencia);
+  }
+);
+
+asistenciaRouter.patch(
+  "/asistencia/:id",
+  requireAuth,
+  requireOrg,
+  requireRole("owner", "admin"),
+  validateBody(editarAsistenciaSchema),
+  async (req: Request<{ id: string }>, res: Response) => {
+    const { id } = req.params;
+    const { empleadoId, sucursalId, tipo, fechaHora } = req.body as {
+      empleadoId?: string;
+      sucursalId?: string;
+      tipo?: TipoMarca;
+      fechaHora?: string;
+    };
+
+    if (empleadoId !== undefined) {
+      const empleado = await getEmpleadoById(empleadoId);
+      if (!empleado || empleado.org_id !== req.org!.id) {
+        res.status(404).json({ error: "Empleado no encontrado" });
+        return;
+      }
+    }
+    if (sucursalId !== undefined) {
+      const sucursal = await getSucursal(req.org!.id, sucursalId);
+      if (!sucursal) {
+        res.status(404).json({ error: "Sucursal no encontrada" });
+        return;
+      }
+    }
+
+    const asistencia = await editarAsistencia(req.org!.id, id, { empleadoId, sucursalId, tipo, fechaHora });
+    res.json(asistencia);
+  }
+);
+
+asistenciaRouter.get(
+  "/asistencia/huerfanas",
+  requireAuth,
+  requireOrg,
+  async (req: Request<Record<string, never>, unknown, unknown, ListQuery>, res: Response) => {
+    const { desde, hasta, sucursalId } = req.query;
+    const data = await listHuerfanas(req.org!.id, { desde: desde || hoyAR(), hasta: hasta || hoyAR(), sucursalId });
+    res.json(data);
+  }
+);
+
 asistenciaRouter.get(
   "/asistencia/rechazadas",
   requireAuth,
@@ -153,12 +239,14 @@ asistenciaRouter.get(
           { header: "Empleado", key: "empleado", width: 26 },
           { header: "Sucursal", key: "sucursal", width: 22 },
           { header: "Tipo", key: "tipo", width: 12 },
+          { header: "Origen", key: "origen", width: 14 },
         ],
         filas: registros.map((r) => ({
           fecha: fechaHoraAR(r.created_at),
           empleado: r.empleado_nombre ?? "—",
           sucursal: r.sucursal_nombre ?? "—",
           tipo: r.tipo === "entrada" ? "Entrada" : "Salida",
+          origen: r.origen === "manual" ? "Manual" : "Empleado",
         })),
       },
       {

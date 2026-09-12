@@ -16,6 +16,10 @@ import {
   getTolerancia,
   setTolerancia,
   calcularCumplimiento,
+  calcularAusencias,
+  listTurnosPuntuales,
+  insertTurnoPuntual,
+  deleteTurnoPuntual,
 } from "../lib/turnos.js";
 import { getEmpleadoById, listEmpleados } from "../lib/empleados.js";
 import { getSucursal } from "../lib/sucursales.js";
@@ -75,6 +79,28 @@ interface CumplimientoQuery {
   desde?: string;
   hasta?: string;
   sucursalId?: string;
+  empleadoId?: string;
+}
+
+interface TurnosPuntualesQuery {
+  empleadoId?: string;
+  desde?: string;
+  hasta?: string;
+}
+
+interface CrearTurnoPuntualBody {
+  empleado_id?: string;
+  sucursal_id?: string | null;
+  fecha?: string;
+  hora_inicio?: string;
+  hora_fin?: string;
+  tolerancia_min?: number | null;
+  nota?: string | null;
+}
+
+interface AusenciasQuery {
+  desde?: string;
+  hasta?: string;
   empleadoId?: string;
 }
 
@@ -292,5 +318,73 @@ turnosRouter.get(
       empleadoId: req.query.empleadoId,
     });
     res.json(data);
+  }
+);
+
+turnosRouter.get(
+  "/turnos/ausencias",
+  requireAuth,
+  requireOrg,
+  requireModulo("turnos"),
+  requireRole("owner", "admin"),
+  async (req: Request<Record<string, never>, unknown, unknown, AusenciasQuery>, res: Response) => {
+    const desde = req.query.desde ?? inicioDeMesAR();
+    const hasta = req.query.hasta ?? hoyAR();
+    const data = await calcularAusencias(req.org!.id, { desde, hasta, empleadoId: req.query.empleadoId });
+    res.json(data);
+  }
+);
+
+turnosRouter.get(
+  "/turnos-puntuales",
+  requireAuth,
+  requireOrg,
+  requireModulo("turnos"),
+  requireRole("owner", "admin"),
+  async (req: Request<Record<string, never>, unknown, unknown, TurnosPuntualesQuery>, res: Response) => {
+    const { empleadoId, desde, hasta } = req.query;
+    const data = await listTurnosPuntuales(req.org!.id, { empleadoId, desde, hasta });
+    res.json(data);
+  }
+);
+
+turnosRouter.post(
+  "/turnos-puntuales",
+  requireAuth,
+  requireOrg,
+  requireModulo("turnos"),
+  requireRole("owner", "admin"),
+  async (req: Request<unknown, unknown, CrearTurnoPuntualBody>, res: Response) => {
+    const { empleado_id, sucursal_id, fecha, hora_inicio, hora_fin, tolerancia_min, nota } = req.body ?? {};
+    if (!empleado_id || !fecha || !hora_inicio || !hora_fin) {
+      res.status(400).json({ error: "Faltan datos del turno puntual" });
+      return;
+    }
+    const empleado = await getEmpleadoById(empleado_id);
+    if (!empleado || empleado.org_id !== req.org!.id) {
+      res.status(400).json({ error: "Empleado inválido" });
+      return;
+    }
+    if (sucursal_id) {
+      const sucursal = await getSucursal(req.org!.id, sucursal_id);
+      if (!sucursal) {
+        res.status(400).json({ error: "Sucursal inválida" });
+        return;
+      }
+    }
+    await insertTurnoPuntual(req.org!.id, { empleado_id, sucursal_id, fecha, hora_inicio, hora_fin, tolerancia_min, nota });
+    res.json({ ok: true });
+  }
+);
+
+turnosRouter.delete(
+  "/turnos-puntuales/:id",
+  requireAuth,
+  requireOrg,
+  requireModulo("turnos"),
+  requireRole("owner", "admin"),
+  async (req: Request<{ id: string }>, res: Response) => {
+    await deleteTurnoPuntual(req.org!.id, req.params.id);
+    res.json({ ok: true });
   }
 );
