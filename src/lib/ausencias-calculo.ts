@@ -79,7 +79,7 @@ export function calcularAusenciasPuro(
     if (fecha > hoyAR) break;
     const dia = new Date(`${fecha}T00:00:00Z`).getUTCDay();
     for (const h of horarios) {
-      if (h.dia_semana !== dia) continue;
+      if (h.fecha ? h.fecha !== fecha : h.dia_semana !== dia) continue;
       if (fecha === hoyAR && horaAMinutos(h.hora_inicio) > minutosAhoraAR) continue;
       const key = `${h.empleado_id}|${h.id}|${fecha}`;
       if (cubiertos.has(key)) continue;

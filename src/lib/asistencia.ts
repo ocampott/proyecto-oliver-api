@@ -4,6 +4,7 @@ import { dentroDeGeocerca } from "./geo.js";
 import type { Sucursal } from "./sucursales.js";
 import {
   emparejarTurnos,
+  buscarSalidasHuerfanas,
   calcularResumenHoras,
   ventanaConMargen,
   type RegistroCrudo,
@@ -16,6 +17,7 @@ export { calcularResumenHoras };
 export type { Turno, ResumenEmpleado };
 
 export type TipoMarca = "entrada" | "salida";
+export type OrigenMarca = "empleado" | "manual";
 
 export interface Asistencia {
   id: string;
@@ -23,8 +25,9 @@ export interface Asistencia {
   empleado_id: string;
   sucursal_id: string;
   tipo: TipoMarca;
-  lat: number;
-  lon: number;
+  lat: number | null;
+  lon: number | null;
+  origen: OrigenMarca;
   created_at: string;
 }
 
@@ -125,6 +128,62 @@ export async function registrarMarca(
     .single();
   if (error) throw error;
   return { ok: true, asistencia: data };
+}
+
+/**
+ * Carga una marca a mano (ej. el empleado se olvidó de marcar). No pasa por
+ * la geocerca — queda con lat/lon null y `origen: "manual"` para que se
+ * distinga siempre de las marcas reales del flujo de /marcar.
+ */
+export async function crearMarcaManual(
+  orgId: string,
+  input: { empleadoId: string; sucursalId: string; tipo: TipoMarca; fechaHora: string }
+): Promise<Asistencia> {
+  const service = createServiceClient();
+  const { data, error } = await service
+    .from("asistencia")
+    .insert({
+      org_id: orgId,
+      empleado_id: input.empleadoId,
+      sucursal_id: input.sucursalId,
+      tipo: input.tipo,
+      lat: null,
+      lon: null,
+      origen: "manual",
+      created_at: input.fechaHora,
+    })
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+/**
+ * Edita una marca ya existente (tipo, sucursal y/o hora). El `origen`
+ * original no cambia: si la hizo el empleado, sigue figurando como tal
+ * aunque un admin le haya corregido la hora.
+ */
+export async function editarAsistencia(
+  orgId: string,
+  id: string,
+  input: { empleadoId?: string; sucursalId?: string; tipo?: TipoMarca; fechaHora?: string }
+): Promise<Asistencia> {
+  const service = createServiceClient();
+  const patch: Record<string, unknown> = {};
+  if (input.empleadoId !== undefined) patch.empleado_id = input.empleadoId;
+  if (input.sucursalId !== undefined) patch.sucursal_id = input.sucursalId;
+  if (input.tipo !== undefined) patch.tipo = input.tipo;
+  if (input.fechaHora !== undefined) patch.created_at = input.fechaHora;
+
+  const { data, error } = await service
+    .from("asistencia")
+    .update(patch)
+    .eq("org_id", orgId)
+    .eq("id", id)
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
 }
 
 // ── Listados y revisión (admin) ─────────────────────────────────────────────
@@ -303,20 +362,19 @@ export async function descartarRechazada(orgId: string, id: string): Promise<voi
 // día pedido, salida 06:00 del día siguiente — spec §2.1) y se filtra el
 // resultado a los turnos que arrancaron dentro del rango pedido.
 
-export async function calcularHoras(
+async function fetchRegistrosCrudos(
   orgId: string,
-  filters: { desde: string; hasta: string; sucursalId?: string }
-): Promise<Turno[]> {
+  filters: { desdeConMargen: string; hastaConMargen: string; sucursalId?: string }
+): Promise<RegistroCrudo[]> {
   const service = createServiceClient();
-  const ventana = ventanaConMargen(diaUtcInicio(filters.desde), diaUtcFin(filters.hasta));
-
   let query = service
     .from("asistencia")
-    .select("empleado_id, sucursal_id, tipo, created_at, empleados(nombre), sucursales(nombre)")
+    .select("id, empleado_id, sucursal_id, tipo, created_at, empleados(nombre), sucursales(nombre)")
     .eq("org_id", orgId)
-    .gte("created_at", ventana.desdeConMargen)
-    .lte("created_at", ventana.hastaConMargen)
-    .order("created_at", { ascending: true }).order("id");
+    .gte("created_at", filters.desdeConMargen)
+    .lte("created_at", filters.hastaConMargen)
+    .order("created_at", { ascending: true })
+    .order("id");
   if (filters.sucursalId) query = query.eq("sucursal_id", filters.sucursalId);
 
   const data = await readAll((from, to) => query.range(from, to));
@@ -326,7 +384,8 @@ export async function calcularHoras(
   const nombreDe = (rel: { nombre: string } | { nombre: string }[] | null): string =>
     (Array.isArray(rel) ? rel[0]?.nombre : rel?.nombre) ?? "?";
 
-  const regs: RegistroCrudo[] = data.map((r) => ({
+  return data.map((r) => ({
+    id: r.id,
     empleado_id: r.empleado_id,
     sucursal_id: r.sucursal_id,
     tipo: r.tipo,
@@ -334,8 +393,58 @@ export async function calcularHoras(
     nombre: nombreDe(r.empleados),
     sucursal_nombre: nombreDe(r.sucursales),
   }));
+}
+
+export async function calcularHoras(
+  orgId: string,
+  filters: { desde: string; hasta: string; sucursalId?: string }
+): Promise<Turno[]> {
+  const ventana = ventanaConMargen(diaUtcInicio(filters.desde), diaUtcFin(filters.hasta));
+  const regs = await fetchRegistrosCrudos(orgId, {
+    desdeConMargen: ventana.desdeConMargen,
+    hastaConMargen: ventana.hastaConMargen,
+    sucursalId: filters.sucursalId,
+  });
 
   return emparejarTurnos(regs).filter(
     (t) => t.entrada_at >= ventana.desdeInicio && t.entrada_at <= ventana.hastaFin
   );
+}
+
+export interface SalidaHuerfana {
+  id: string;
+  empleado_id: string;
+  sucursal_id: string;
+  created_at: string;
+  empleado_nombre: string;
+  sucursal_nombre: string;
+}
+
+/**
+ * Salidas registradas sin una entrada previa que las explique — antes se
+ * descartaban en silencio al calcular horas (spec `emparejarTurnos`), ahora
+ * se exponen para que un admin las revise: puede editarlas (ej. corregirlas
+ * a "entrada" si se tocó el botón equivocado) o borrarlas desde /asistencia.
+ */
+export async function listHuerfanas(
+  orgId: string,
+  filters: { desde: string; hasta: string; sucursalId?: string }
+): Promise<SalidaHuerfana[]> {
+  const ventana = ventanaConMargen(diaUtcInicio(filters.desde), diaUtcFin(filters.hasta));
+  const regs = await fetchRegistrosCrudos(orgId, {
+    desdeConMargen: ventana.desdeConMargen,
+    hastaConMargen: ventana.hastaConMargen,
+    sucursalId: filters.sucursalId,
+  });
+
+  return buscarSalidasHuerfanas(regs)
+    .filter((r) => r.created_at >= ventana.desdeInicio && r.created_at <= ventana.hastaFin)
+    .map((r) => ({
+      id: r.id,
+      empleado_id: r.empleado_id,
+      sucursal_id: r.sucursal_id,
+      created_at: r.created_at,
+      empleado_nombre: r.nombre,
+      sucursal_nombre: r.sucursal_nombre,
+    }));
 }

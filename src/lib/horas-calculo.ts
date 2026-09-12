@@ -4,6 +4,7 @@
 export type TipoMarca = "entrada" | "salida";
 
 export interface RegistroCrudo {
+  id: string;
   empleado_id: string;
   sucursal_id: string;
   tipo: TipoMarca;
@@ -18,7 +19,9 @@ export interface Turno {
   sucursal_id: string;
   sucursal_nombre: string;
   entrada_at: string;
+  entrada_id: string;
   salida_at: string | null;
+  salida_id: string | null;
   horas: number | null;
 }
 
@@ -29,12 +32,16 @@ const TOPE_TURNO_HORAS = 16;
 
 /**
  * Empareja cada "entrada" con la siguiente "salida" cronológica del mismo
- * empleado+sucursal. Salida sin entrada previa: dato huérfano, se ignora.
+ * empleado+sucursal, y junta aparte las salidas sin entrada previa ("dato
+ * huérfano" — típico si se borró la entrada o falló la geocerca en la
+ * entrada pero no en la salida). Antes esas salidas se descartaban en
+ * silencio; ahora se exponen (ver `huerfanas`) para poder revisarlas y
+ * resolverlas a mano (editar para convertirlas en entrada, o borrarlas).
  * Entrada sin salida (o cuya salida está más allá del tope): turno en curso
  * (horas: null). No filtra por rango de fechas — eso lo hace el caller
  * (asistencia.ts) después de pedir con margen, ver ventanaConMargen.
  */
-export function emparejarTurnos(regs: RegistroCrudo[]): Turno[] {
+function emparejarAsistencia(regs: RegistroCrudo[]): { turnos: Turno[]; huerfanas: RegistroCrudo[] } {
   const ordenados = [...regs].sort((a, b) => a.created_at.localeCompare(b.created_at));
 
   const porPar = new Map<string, RegistroCrudo[]>();
@@ -45,6 +52,7 @@ export function emparejarTurnos(regs: RegistroCrudo[]): Turno[] {
   }
 
   const turnos: Turno[] = [];
+  const huerfanas: RegistroCrudo[] = [];
   for (const regsDelPar of porPar.values()) {
     let pendiente: RegistroCrudo | null = null;
 
@@ -54,7 +62,9 @@ export function emparejarTurnos(regs: RegistroCrudo[]): Turno[] {
       sucursal_id: entrada.sucursal_id,
       sucursal_nombre: entrada.sucursal_nombre,
       entrada_at: entrada.created_at,
+      entrada_id: entrada.id,
       salida_at: salida?.created_at ?? null,
+      salida_id: salida?.id ?? null,
       horas: salida
         ? Math.round(
             ((new Date(salida.created_at).getTime() - new Date(entrada.created_at).getTime()) / 3600000) * 100
@@ -68,14 +78,19 @@ export function emparejarTurnos(regs: RegistroCrudo[]): Turno[] {
         pendiente = r;
         continue;
       }
-      if (!pendiente) continue; // salida sin entrada previa: dato huérfano, se ignora
+      if (!pendiente) {
+        huerfanas.push(r);
+        continue;
+      }
 
       const horas = (new Date(r.created_at).getTime() - new Date(pendiente.created_at).getTime()) / 3600000;
       if (horas > TOPE_TURNO_HORAS) {
         // La salida "real" está demasiado lejos como para ser de este turno
         // (típico olvido de marcar salida) — la entrada queda abierta y esta
-        // salida se descarta, igual que una salida huérfana.
+        // salida se trata como huérfana (no corresponde a ninguna entrada
+        // "cercana", aunque tenga alguna más vieja sin cerrar).
         turnos.push(aTurno(pendiente, null));
+        huerfanas.push(r);
         pendiente = null;
       } else {
         turnos.push(aTurno(pendiente, r));
@@ -85,7 +100,18 @@ export function emparejarTurnos(regs: RegistroCrudo[]): Turno[] {
     if (pendiente) turnos.push(aTurno(pendiente, null));
   }
 
-  return turnos.sort((a, b) => a.nombre.localeCompare(b.nombre) || a.entrada_at.localeCompare(b.entrada_at));
+  turnos.sort((a, b) => a.nombre.localeCompare(b.nombre) || a.entrada_at.localeCompare(b.entrada_at));
+  huerfanas.sort((a, b) => a.nombre.localeCompare(b.nombre) || a.created_at.localeCompare(b.created_at));
+  return { turnos, huerfanas };
+}
+
+export function emparejarTurnos(regs: RegistroCrudo[]): Turno[] {
+  return emparejarAsistencia(regs).turnos;
+}
+
+/** Salidas sin entrada previa dentro de `regs` — ver emparejarAsistencia. */
+export function buscarSalidasHuerfanas(regs: RegistroCrudo[]): RegistroCrudo[] {
+  return emparejarAsistencia(regs).huerfanas;
 }
 
 export interface ResumenEmpleado {

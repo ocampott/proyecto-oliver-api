@@ -30,6 +30,14 @@ export interface HorarioParaLiquidacion {
   dia_semana: number;
   hora_inicio: string;
   hora_fin: string;
+  /** Si está seteado, es un turno puntual: cuenta una sola vez en esa fecha
+   * exacta (ya vino filtrado al período) en vez de repetirse cada semana. */
+  fecha?: string;
+}
+
+export interface AdelantoParaLiquidacion {
+  empleado_id: string;
+  monto: number;
 }
 
 export interface LiquidacionEmpleado {
@@ -53,6 +61,8 @@ export interface LiquidacionEmpleado {
   dias_trabajados: number | null;
   horas_extra: number | null;
   total_por_horas: number | null;
+  /** Suma de adelantos del período — ya restados de `total`. */
+  adelantos: number;
   total: number;
   advertencias: string[];
 }
@@ -125,8 +135,17 @@ export function calcularLiquidacionPuro(
   turnos: Turno[],
   cumplimiento: CumplimientoRow[],
   ausencias: AusenciaInferida[],
-  horarios: HorarioParaLiquidacion[]
+  horarios: HorarioParaLiquidacion[],
+  adelantos: AdelantoParaLiquidacion[] = []
 ): LiquidacionEmpleado[] {
+  const adelantosPorEmpleado = new Map<string, number>();
+  for (const a of adelantos) {
+    adelantosPorEmpleado.set(a.empleado_id, (adelantosPorEmpleado.get(a.empleado_id) ?? 0) + a.monto);
+  }
+  function adelantosDe(empleadoId: string): number {
+    return adelantosPorEmpleado.get(empleadoId) ?? 0;
+  }
+
   const turnosPorEmpleado = new Map<string, Turno[]>();
   for (const t of turnos) {
     if (!turnosPorEmpleado.has(t.empleado_id)) turnosPorEmpleado.set(t.empleado_id, []);
@@ -163,7 +182,9 @@ export function calcularLiquidacionPuro(
       const turnosEmp = turnosPorEmpleado.get(emp.id) ?? [];
       const horasTrabajadas = turnosEmp.filter((t) => t.horas !== null).reduce((acc, t) => acc + (t.horas ?? 0), 0);
       const horasEnCurso = turnosEmp.some((t) => t.horas === null);
+      const adelantosEmp = adelantosDe(emp.id);
       if (!emp.valor_hora) advertencias.push("Sin valor hora configurado");
+      const totalPorHoras = horasTrabajadas * (emp.valor_hora ?? 0);
       return {
         empleado_id: emp.id,
         nombre: emp.nombre,
@@ -184,8 +205,9 @@ export function calcularLiquidacionPuro(
         horas_ausencia_justificada: 0,
         dias_trabajados: null,
         horas_extra: null,
-        total_por_horas: horasTrabajadas * (emp.valor_hora ?? 0),
-        total: horasTrabajadas * (emp.valor_hora ?? 0),
+        total_por_horas: totalPorHoras,
+        adelantos: adelantosEmp,
+        total: totalPorHoras - adelantosEmp,
         advertencias,
       };
     }
@@ -199,8 +221,10 @@ export function calcularLiquidacionPuro(
 
       if (!emp.valor_dia) advertencias.push("Sin valor por día configurado");
       if (!emp.valor_hora) advertencias.push("Sin valor hora configurado (necesario para horas extra)");
+      const adelantosEmp = adelantosDe(emp.id);
 
       if (horariosEmp.length === 0) {
+        const totalPorHoras = horasTrabajadasTotal * (emp.valor_hora ?? 0);
         return {
           empleado_id: emp.id,
           nombre: emp.nombre,
@@ -221,18 +245,30 @@ export function calcularLiquidacionPuro(
           horas_ausencia_justificada: 0,
           dias_trabajados: null,
           horas_extra: null,
-          total_por_horas: horasTrabajadasTotal * (emp.valor_hora ?? 0),
-          total: horasTrabajadasTotal * (emp.valor_hora ?? 0),
+          total_por_horas: totalPorHoras,
+          adelantos: adelantosEmp,
+          total: totalPorHoras - adelantosEmp,
           advertencias,
         };
       }
 
       const horasPactadasPorDiaSemana = new Map<number, number>();
+      // Turno puntual en una fecha exacta (ej. "domingo por medio") pisa el
+      // día de semana para ESA fecha — se paga jornal completo igual que un
+      // día del patrón semanal, no directo por hora.
+      const horasPactadasPorFechaPuntual = new Map<string, number>();
       for (const h of horariosEmp) {
-        horasPactadasPorDiaSemana.set(
-          h.dia_semana,
-          (horasPactadasPorDiaSemana.get(h.dia_semana) ?? 0) + duracionHorarioHoras(h.hora_inicio, h.hora_fin)
-        );
+        if (h.fecha) {
+          horasPactadasPorFechaPuntual.set(
+            h.fecha,
+            (horasPactadasPorFechaPuntual.get(h.fecha) ?? 0) + duracionHorarioHoras(h.hora_inicio, h.hora_fin)
+          );
+        } else {
+          horasPactadasPorDiaSemana.set(
+            h.dia_semana,
+            (horasPactadasPorDiaSemana.get(h.dia_semana) ?? 0) + duracionHorarioHoras(h.hora_inicio, h.hora_fin)
+          );
+        }
       }
 
       const horasPorFecha = new Map<string, number>();
@@ -246,7 +282,7 @@ export function calcularLiquidacionPuro(
       let total = 0;
       for (const [fecha, horasDia] of horasPorFecha) {
         const diaSemana = new Date(`${fecha}T00:00:00Z`).getUTCDay();
-        const horasPactadasDia = horasPactadasPorDiaSemana.get(diaSemana) ?? 0;
+        const horasPactadasDia = horasPactadasPorFechaPuntual.get(fecha) ?? horasPactadasPorDiaSemana.get(diaSemana) ?? 0;
         if (horasPactadasDia > 0) {
           diasTrabajados += 1;
           const extra = Math.max(0, horasDia - horasPactadasDia);
@@ -284,15 +320,20 @@ export function calcularLiquidacionPuro(
         dias_trabajados: diasTrabajados,
         horas_extra: horasExtra,
         total_por_horas: totalPorHoras,
-        total,
+        adelantos: adelantosEmp,
+        total: total - adelantosEmp,
         advertencias,
       };
     }
 
     if (emp.tipo_pago === "mensual") {
       const horariosEmp = horariosPorEmpleado.get(emp.id) ?? [];
+      // Un turno puntual (h.fecha seteado) ya viene filtrado al período —
+      // cuenta 1 sola vez, no "ocurrencias por día de semana" como un
+      // horario recurrente.
       const horasPactadas = horariosEmp.reduce(
-        (acc, h) => acc + ocurrencias(h.dia_semana) * duracionHorarioHoras(h.hora_inicio, h.hora_fin),
+        (acc, h) =>
+          acc + (h.fecha ? 1 : ocurrencias(h.dia_semana)) * duracionHorarioHoras(h.hora_inicio, h.hora_fin),
         0
       );
       const valorHoraEquivalente = horasPactadas > 0 && emp.sueldo_mensual ? emp.sueldo_mensual / horasPactadas : null;
@@ -320,8 +361,10 @@ export function calcularLiquidacionPuro(
       if (horasPactadas === 0) advertencias.push("Sin horario cargado — no se pueden calcular descuentos");
       if (!emp.valor_hora) advertencias.push("Sin valor hora configurado (no se puede comparar contra horas trabajadas)");
 
-      const total = (emp.sueldo_mensual ?? 0) - descuentoTardanza - descuentoAusencia;
-      const totalPorHoras = compararConValorHora(total, horasTrabajadas, emp.valor_hora, advertencias);
+      const adelantosEmp = adelantosDe(emp.id);
+      const totalSinAdelantos = (emp.sueldo_mensual ?? 0) - descuentoTardanza - descuentoAusencia;
+      const totalPorHoras = compararConValorHora(totalSinAdelantos, horasTrabajadas, emp.valor_hora, advertencias);
+      const total = totalSinAdelantos - adelantosEmp;
 
       return {
         empleado_id: emp.id,
@@ -344,12 +387,14 @@ export function calcularLiquidacionPuro(
         dias_trabajados: null,
         horas_extra: null,
         total_por_horas: totalPorHoras,
+        adelantos: adelantosEmp,
         total,
         advertencias,
       };
     }
 
     advertencias.push("Sin tipo de pago configurado");
+    const adelantosEmp = adelantosDe(emp.id);
     return {
       empleado_id: emp.id,
       nombre: emp.nombre,
@@ -371,7 +416,8 @@ export function calcularLiquidacionPuro(
       dias_trabajados: null,
       horas_extra: null,
       total_por_horas: null,
-      total: 0,
+      adelantos: adelantosEmp,
+      total: 0 - adelantosEmp,
       advertencias,
     };
   });

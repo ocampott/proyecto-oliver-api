@@ -141,6 +141,118 @@ export async function insertHorariosBulk(
   if (error) throw error;
 }
 
+// ── Turnos puntuales ─────────────────────────────────────────────────────────
+// Turno de UNA fecha exacta, además del patrón semanal recurrente de arriba
+// — para empleados que trabajan un día que no sigue un patrón semanal fijo
+// (ej. "domingo por medio"). Se representan con el mismo shape que un
+// horario recurrente más `fecha` (ver HorarioParaMatch/HorarioParaLiquidacion
+// en cumplimiento-calculo.ts/liquidacion-calculo.ts), así que se pueden
+// mezclar en el mismo array antes de pasarlo a esas funciones puras.
+
+export interface TurnoPuntual {
+  id: string;
+  empleado_id: string;
+  sucursal_id: string | null;
+  sucursal_nombre: string | null;
+  fecha: string;
+  hora_inicio: string;
+  hora_fin: string;
+  tolerancia_min: number | null;
+  nota: string | null;
+}
+
+interface TurnoPuntualRow {
+  id: string;
+  empleado_id: string;
+  sucursal_id: string | null;
+  fecha: string;
+  hora_inicio: string;
+  hora_fin: string;
+  tolerancia_min: number | null;
+  nota: string | null;
+  sucursales: { nombre: string } | { nombre: string }[] | null;
+}
+
+export async function listTurnosPuntuales(
+  orgId: string,
+  filters: { empleadoId?: string; desde?: string; hasta?: string } = {}
+): Promise<TurnoPuntual[]> {
+  const service = createServiceClient();
+  let query = service
+    .from("turnos_puntuales")
+    .select("id, empleado_id, sucursal_id, fecha, hora_inicio, hora_fin, tolerancia_min, nota, sucursales(nombre)")
+    .eq("org_id", orgId)
+    .order("fecha", { ascending: false });
+  if (filters.empleadoId) query = query.eq("empleado_id", filters.empleadoId);
+  if (filters.desde) query = query.gte("fecha", filters.desde);
+  if (filters.hasta) query = query.lte("fecha", filters.hasta);
+
+  const { data, error } = await query;
+  if (error) {
+    // PGRST205: la tabla no existe todavía en este entorno (falta correr la
+    // migración 0016). Turnos puntuales es una funcionalidad puramente
+    // aditiva — no tiene por qué tumbar cumplimiento/ausencias/liquidación
+    // (que ya funcionaban antes de que existiera) mientras tanto.
+    if (error.code === "PGRST205") return [];
+    throw error;
+  }
+  return (data as TurnoPuntualRow[]).map((r) => ({
+    id: r.id,
+    empleado_id: r.empleado_id,
+    sucursal_id: r.sucursal_id,
+    sucursal_nombre: nombreDe(r.sucursales),
+    fecha: r.fecha,
+    hora_inicio: r.hora_inicio,
+    hora_fin: r.hora_fin,
+    tolerancia_min: r.tolerancia_min,
+    nota: r.nota,
+  }));
+}
+
+export async function insertTurnoPuntual(
+  orgId: string,
+  params: {
+    empleado_id: string;
+    sucursal_id?: string | null;
+    fecha: string;
+    hora_inicio: string;
+    hora_fin: string;
+    tolerancia_min?: number | null;
+    nota?: string | null;
+  }
+): Promise<void> {
+  const service = createServiceClient();
+  const { error } = await service.from("turnos_puntuales").insert({
+    org_id: orgId,
+    empleado_id: params.empleado_id,
+    sucursal_id: params.sucursal_id ?? null,
+    fecha: params.fecha,
+    hora_inicio: params.hora_inicio,
+    hora_fin: params.hora_fin,
+    tolerancia_min: params.tolerancia_min ?? null,
+    nota: params.nota ?? null,
+  });
+  if (error) throw error;
+}
+
+export async function deleteTurnoPuntual(orgId: string, id: string): Promise<void> {
+  const service = createServiceClient();
+  const { error } = await service.from("turnos_puntuales").delete().eq("org_id", orgId).eq("id", id);
+  if (error) throw error;
+}
+
+export function turnoPuntualComoHorario(p: TurnoPuntual): HorarioParaMatch {
+  return {
+    id: `puntual:${p.id}`,
+    empleado_id: p.empleado_id,
+    fecha: p.fecha,
+    dia_semana: new Date(`${p.fecha}T00:00:00Z`).getUTCDay(),
+    hora_inicio: p.hora_inicio,
+    hora_fin: p.hora_fin,
+    tolerancia_min: p.tolerancia_min,
+  };
+}
+
 // ── Plantillas de turno ──────────────────────────────────────────────────────
 // Molde con nombre reutilizable (horario + opcionalmente los días habituales)
 // para no tipear el horario cada vez al asignar. Sin sucursal a propósito:
@@ -251,16 +363,20 @@ export async function calcularCumplimiento(
 ): Promise<CumplimientoRow[]> {
   const service = createServiceClient();
 
-  const [toleranciaGeneral, turnosTodos, horariosRes] = await Promise.all([
+  const [toleranciaGeneral, turnosTodos, horariosRes, puntuales] = await Promise.all([
     getTolerancia(orgId),
     calcularHoras(orgId, { desde: filters.desde, hasta: filters.hasta, sucursalId: filters.sucursalId }),
     service
       .from("horarios_empleado")
       .select("id, empleado_id, dia_semana, hora_inicio, hora_fin, tolerancia_min")
       .eq("org_id", orgId),
+    listTurnosPuntuales(orgId, { desde: filters.desde, hasta: filters.hasta }),
   ]);
   if (horariosRes.error) throw horariosRes.error;
-  const horarios = horariosRes.data as HorarioParaMatch[];
+  const horarios: HorarioParaMatch[] = [
+    ...(horariosRes.data as HorarioParaMatch[]),
+    ...puntuales.map(turnoPuntualComoHorario),
+  ];
 
   return calcularCumplimientoPuro(turnosTodos, horarios, toleranciaGeneral, filters.empleadoId);
 }
@@ -275,16 +391,20 @@ export async function calcularAusencias(
 ): Promise<AusenciaInferida[]> {
   const service = createServiceClient();
 
-  const [cumplimiento, horariosRes, ausencias] = await Promise.all([
+  const [cumplimiento, horariosRes, ausencias, puntuales] = await Promise.all([
     calcularCumplimiento(orgId, filters),
     service
       .from("horarios_empleado")
       .select("id, empleado_id, dia_semana, hora_inicio, hora_fin, tolerancia_min")
       .eq("org_id", orgId),
     listAusencias(orgId, { desde: filters.desde, hasta: filters.hasta, empleadoId: filters.empleadoId }),
+    listTurnosPuntuales(orgId, { desde: filters.desde, hasta: filters.hasta, empleadoId: filters.empleadoId }),
   ]);
   if (horariosRes.error) throw horariosRes.error;
-  let horarios = horariosRes.data as (HorarioParaMatch & { id: string })[];
+  let horarios: (HorarioParaMatch & { id: string })[] = [
+    ...(horariosRes.data as (HorarioParaMatch & { id: string })[]),
+    ...puntuales.map((p) => turnoPuntualComoHorario(p) as HorarioParaMatch & { id: string }),
+  ];
   if (filters.empleadoId) horarios = horarios.filter((h) => h.empleado_id === filters.empleadoId);
 
   const rangosPorEmpleado = new Map<string, { fecha_desde: string; fecha_hasta: string }[]>();

@@ -9,7 +9,9 @@ function turno(entrada_at: string, salida_at: string | null, extra: Partial<Turn
     sucursal_id: "s1",
     sucursal_nombre: "Centro",
     entrada_at,
+    entrada_id: "entrada-1",
     salida_at,
+    salida_id: salida_at ? "salida-1" : null,
     horas: salida_at ? (new Date(salida_at).getTime() - new Date(entrada_at).getTime()) / 3600000 : null,
     ...extra,
   };
@@ -71,6 +73,56 @@ describe("calcularCumplimientoPuro", () => {
     );
     expect(row.entrada_esperada).toBe("22:00");
     expect(row.estado).not.toBe("sin_horario");
+  });
+
+  it("turno puntual: matchea por fecha exacta, no por día de semana", () => {
+    const puntual: HorarioParaMatch = {
+      empleado_id: "e1",
+      fecha: "2026-08-10", // lunes, pero dia_semana queda "mal" a propósito
+      dia_semana: 3,
+      hora_inicio: "09:00",
+      hora_fin: "13:00",
+      tolerancia_min: null,
+    };
+    const [row] = calcularCumplimientoPuro(
+      [turno("2026-08-10T12:00:00.000Z", "2026-08-10T16:00:00.000Z")], // lunes 09:00 AR
+      [puntual],
+      5
+    );
+    expect(row.estado).toBe("a_horario");
+    expect(row.entrada_esperada).toBe("09:00");
+  });
+
+  it("turno puntual: no matchea si la fecha no coincide", () => {
+    const puntual: HorarioParaMatch = {
+      empleado_id: "e1",
+      fecha: "2026-08-11", // martes, distinto del turno real (lunes)
+      dia_semana: 1,
+      hora_inicio: "09:00",
+      hora_fin: "13:00",
+      tolerancia_min: null,
+    };
+    const [row] = calcularCumplimientoPuro(
+      [turno("2026-08-10T12:00:00.000Z", "2026-08-10T20:00:00.000Z")],
+      [puntual],
+      5
+    );
+    expect(row.estado).toBe("sin_horario");
+  });
+
+  it("turno puntual: no participa del cruce nocturno con el día anterior", () => {
+    const puntualNocturnoAyer: HorarioParaMatch = {
+      empleado_id: "e1",
+      fecha: "2026-08-09", // domingo (día anterior al turno real)
+      dia_semana: 0,
+      hora_inicio: "22:00",
+      hora_fin: "06:00",
+      tolerancia_min: null,
+    };
+    // Entrada real: lunes 01:00 AR = lunes 04:00 UTC — un horario recurrente
+    // nocturno de "ayer" sí matchearía (ver test de arriba), un puntual no.
+    const [row] = calcularCumplimientoPuro([turno("2026-08-10T04:00:00.000Z", null)], [puntualNocturnoAyer], 5);
+    expect(row.estado).toBe("sin_horario");
   });
 
   it("filtra por empleadoId cuando se pasa", () => {
