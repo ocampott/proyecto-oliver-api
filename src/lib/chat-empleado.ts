@@ -363,7 +363,7 @@ export async function procesarMensaje(orgId: string, empleado: Empleado, texto: 
 
 async function pendientesDeCertificado(orgId: string, empleadoId: string) {
   const ausencias = await listAusencias(orgId, { empleadoId });
-  return ausencias.filter((a) => a.certificado_pendiente);
+  return ausencias.filter((a) => a.certificado_pendiente && a.estado !== "rechazada");
 }
 
 async function iniciarEntregaCertificado(orgId: string, empleado: Empleado): Promise<ChatRespuesta> {
@@ -420,7 +420,7 @@ async function finalizarReporte(orgId: string, empleado: Empleado, data: ChatDat
     }
   }
 
-  const certificadoPendiente = categoria === "Enfermedad" && data.certificado === false;
+  const certificadoPendiente = categoria === "Enfermedad";
   const ausenciaId = await insertAusencia(orgId, {
     empleado_id: empleado.id,
     fecha_desde: data.fechaInicio as string,
@@ -434,7 +434,7 @@ async function finalizarReporte(orgId: string, empleado: Empleado, data: ChatDat
   if (categoria === "Enfermedad" && data.certificado === true) {
     await setEstado(orgId, empleado.id, "certificado_esperando_archivo", { ausenciaId });
     return responder(orgId, empleado.id, {
-      mensajes: ["Avisé a RRHH. ✅", "Ahora adjuntá el archivo (foto o PDF) de tu certificado médico."],
+      mensajes: ["Tu solicitud quedó pendiente de revisión por RRHH.", "Ahora adjuntá el archivo (foto o PDF) de tu certificado médico."],
       paso: "certificado_esperando_archivo",
       entrada: "archivo",
     });
@@ -443,8 +443,8 @@ async function finalizarReporte(orgId: string, empleado: Empleado, data: ChatDat
   await setEstado(orgId, empleado.id, "cierre", {});
   const mensajeFinal =
     categoria === "Enfermedad" && data.certificado === false
-      ? "Avisé a RRHH. ✅ Es importante que presentes el certificado médico a la brevedad — podés hacerlo cuando quieras desde \"Entregar certificado pendiente\"."
-      : "Listo, avisé a RRHH. ✅";
+      ? "Tu solicitud quedó pendiente de revisión por RRHH. Es importante que presentes el certificado médico a la brevedad — podés hacerlo cuando quieras desde \"Entregar certificado pendiente\"."
+      : "Tu solicitud quedó pendiente de revisión por RRHH. Podés consultar su estado en Mi información.";
   return responder(orgId, empleado.id, {
     mensajes: [mensajeFinal, "¿Necesitás algo más?"],
     paso: "cierre",

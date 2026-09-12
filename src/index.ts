@@ -21,7 +21,17 @@ import { legajosRouter } from "./routes/legajos.js";
 import { vacacionesRouter } from "./routes/vacaciones.js";
 import { chatRouter } from "./routes/chat.js";
 
+import { portalRouter } from "./routes/portal.js";
+import { operacionRouter } from "./routes/operacion.js";
+import { OperacionError } from "./lib/operacion-validacion.js";
+
+import { medirRequest, resumenMetricas } from "./lib/metricas.js";
+import { requireAuth } from "./middleware/auth.js";
+import { requirePlatformAdmin } from "./middleware/require-platform-admin.js";
+
 const app = express();
+app.use(medirRequest);
+
 
 app.use(compression());
 app.use(
@@ -35,6 +45,10 @@ app.use(cookieParser());
 // 100kb alcanza y sobra para los bodies de esta API (spec §2.5) — corta
 // requests gigantes antes de que lleguen a cualquier handler.
 app.use(express.json({ limit: "100kb" }));
+
+app.get("/api/admin/metricas", requireAuth, requirePlatformAdmin, (_req, res) => {
+  res.json({ alcance: "Últimas 200 muestras por ruta en este proceso; se reinicia al desplegar.", rutas: resumenMetricas() });
+});
 
 app.get("/api/health", (_req, res) => res.json({ ok: true }));
 
@@ -55,8 +69,14 @@ app.use("/api", adelantosRouter);
 app.use("/api", legajosRouter);
 app.use("/api", vacacionesRouter);
 app.use("/api", chatRouter);
+app.use("/api", operacionRouter);
+app.use("/api", portalRouter);
 
 app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
+  if (err instanceof OperacionError) {
+    res.status(err.status).json({ error: err.message });
+    return;
+  }
   console.error(err);
   res.status(500).json({ error: "Algo salió mal. Probá de nuevo." });
 });

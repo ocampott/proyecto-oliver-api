@@ -16,6 +16,7 @@ export interface LegajoArchivo {
   ausencia_id: string | null;
   nombre_original: string;
   storage_path: string;
+  visible_empleado: boolean;
   mimetype: string;
   tamanio_bytes: number;
   origen: "manual" | "chat_empleado";
@@ -62,6 +63,7 @@ export async function guardarLegajoArchivo(
       mimetype: params.mimetype,
       tamanio_bytes: params.buffer.length,
       origen: params.origen,
+      visible_empleado: params.origen === "chat_empleado",
       subido_por: params.subidoPor ?? null,
     })
     .select()

@@ -1,3 +1,4 @@
+import { readAll } from "./read-all.js";
 import { createServiceClient } from "./supabase-service.js";
 import { calcularHoras } from "./asistencia.js";
 import {
@@ -51,12 +52,11 @@ export async function listHorarios(orgId: string, empleadoId?: string): Promise<
     .select("id, empleado_id, sucursal_id, dia_semana, hora_inicio, hora_fin, tolerancia_min, sucursales(nombre)")
     .eq("org_id", orgId)
     .order("dia_semana")
-    .order("hora_inicio");
+    .order("hora_inicio").order("id");
   if (empleadoId) query = query.eq("empleado_id", empleadoId);
 
-  const { data, error } = await query;
-  if (error) throw error;
-  return (data as HorarioRow[]).map((r) => ({
+  const data = await readAll<HorarioRow>((from, to) => query.range(from, to) as unknown as PromiseLike<{ data: HorarioRow[] | null; error: unknown }>);
+  return data.map((r) => ({
     id: r.id,
     empleado_id: r.empleado_id,
     sucursal_id: r.sucursal_id,
@@ -241,7 +241,7 @@ export async function deleteTurnoPuntual(orgId: string, id: string): Promise<voi
   if (error) throw error;
 }
 
-function turnoPuntualComoHorario(p: TurnoPuntual): HorarioParaMatch {
+export function turnoPuntualComoHorario(p: TurnoPuntual): HorarioParaMatch {
   return {
     id: `puntual:${p.id}`,
     empleado_id: p.empleado_id,
@@ -408,7 +408,7 @@ export async function calcularAusencias(
   if (filters.empleadoId) horarios = horarios.filter((h) => h.empleado_id === filters.empleadoId);
 
   const rangosPorEmpleado = new Map<string, { fecha_desde: string; fecha_hasta: string }[]>();
-  for (const a of ausencias) {
+  for (const a of ausencias.filter((a) => a.estado === "aprobada")) {
     if (!rangosPorEmpleado.has(a.empleado_id)) rangosPorEmpleado.set(a.empleado_id, []);
     rangosPorEmpleado.get(a.empleado_id)!.push({ fecha_desde: a.fecha_desde, fecha_hasta: a.fecha_hasta });
   }

@@ -1,3 +1,4 @@
+import { readAll } from "./read-all.js";
 import { createServiceClient } from "./supabase-service.js";
 import { rangeFor, buildMeta, type PaginationParams, type Paginated } from "./pagination.js";
 
@@ -20,6 +21,8 @@ export interface Ausencia {
   contacto: string | null;
   certificado_pendiente: boolean;
   origen: "admin" | "empleado";
+  estado: "pendiente" | "aprobada" | "rechazada";
+  revision: number;
   created_at: string;
 }
 
@@ -34,6 +37,8 @@ interface AusenciaRow {
   contacto: string | null;
   certificado_pendiente: boolean;
   origen: "admin" | "empleado";
+  estado: "pendiente" | "aprobada" | "rechazada";
+  revision: number;
   created_at: string;
   empleados: { nombre: string } | { nombre: string }[] | null;
   sucursales: { nombre: string } | { nombre: string }[] | null;
@@ -61,11 +66,11 @@ export async function listAusencias(
   let query = service
     .from("ausencias")
     .select(
-      "id, empleado_id, sucursal_id, fecha_desde, fecha_hasta, motivo, detalle, contacto, certificado_pendiente, origen, created_at, empleados(nombre), sucursales(nombre)",
+      "id, empleado_id, sucursal_id, fecha_desde, fecha_hasta, motivo, detalle, contacto, certificado_pendiente, origen, estado, revision, created_at, empleados(nombre), sucursales(nombre)",
       params ? { count: "exact" } : undefined
     )
     .eq("org_id", orgId)
-    .order("fecha_desde", { ascending: false });
+    .order("fecha_desde", { ascending: false }).order("id");
   // Overlap con el rango filtrado: la ausencia no terminó antes de "desde" y no empieza después de "hasta".
   if (filters?.desde) query = query.gte("fecha_hasta", filters.desde);
   if (filters?.hasta) query = query.lte("fecha_desde", filters.hasta);
@@ -77,7 +82,10 @@ export async function listAusencias(
     query = query.range(from, to);
   }
 
-  const { data, error, count } = await query;
+  const { data, error, count } = params ? await query : {
+    data: await readAll<AusenciaRow>((from, to) => query.range(from, to) as unknown as PromiseLike<{ data: AusenciaRow[] | null; error: unknown }>),
+    error: null, count: null,
+  };
   if (error) throw error;
   const mapped = (data as AusenciaRow[]).map((r) => ({
     id: r.id,
@@ -92,6 +100,8 @@ export async function listAusencias(
     contacto: r.contacto,
     certificado_pendiente: r.certificado_pendiente,
     origen: r.origen,
+    estado: r.estado,
+    revision: r.revision,
     created_at: r.created_at,
   }));
 

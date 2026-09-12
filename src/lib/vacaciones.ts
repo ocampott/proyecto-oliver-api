@@ -16,7 +16,7 @@ export async function calcularSaldoVacaciones(orgId: string, anio?: number): Pro
   const finAnio = `${anioObjetivo}-12-31`;
 
   const [empleadosTodos, ausencias] = await Promise.all([
-    listEmpleados(orgId),
+    listEmpleados(orgId, false),
     listAusencias(orgId, { desde: inicioAnio, hasta: finAnio }),
   ]);
 
@@ -25,7 +25,7 @@ export async function calcularSaldoVacaciones(orgId: string, anio?: number): Pro
     .map((e) => ({ id: e.id, nombre: nombreCompleto(e), fecha_ingreso: e.fecha_ingreso }));
 
   const vacacionesRows = ausencias
-    .filter((a) => a.motivo.trim().toLowerCase() === "vacaciones")
+    .filter((a) => a.estado === "aprobada" && a.motivo.trim().toLowerCase() === "vacaciones")
     .map((a) => ({ empleado_id: a.empleado_id, fecha_desde: a.fecha_desde, fecha_hasta: a.fecha_hasta }));
 
   return calcularSaldoVacacionesPuro(anioObjetivo, empleados, vacacionesRows);

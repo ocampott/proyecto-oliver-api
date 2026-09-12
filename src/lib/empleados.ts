@@ -1,3 +1,4 @@
+import { readAll } from "./read-all.js";
 import { createServiceClient } from "./supabase-service.js";
 import { validarEmpleado, buscarEmpleadoParecido } from "./nomina.js";
 import { rangeFor, buildMeta, type PaginationParams, type Paginated } from "./pagination.js";
@@ -24,19 +25,19 @@ export interface Empleado {
   valor_dia: number | null;
 }
 
-export async function listEmpleados(orgId: string): Promise<(Empleado & { tiene_asistencia: boolean })[]> {
+export async function listEmpleados(orgId: string, incluirAsistencia = true): Promise<(Empleado & { tiene_asistencia: boolean })[]> {
   const service = createServiceClient();
-  const { data, error } = await service
+  const query = service
     .from("empleados")
     .select("*")
     .eq("org_id", orgId)
     .order("apellido")
-    .order("nombre");
-  if (error) throw error;
+    .order("nombre").order("id");
+  const data = await readAll<Empleado>((from, to) => query.range(from, to));
 
   // Igual que en sucursales.ts: solo hace falta saber esto para los
   // inactivos (es lo único que usa el botón de eliminar).
-  const inactivos = data.filter((e) => e.estado === "baja");
+  const inactivos = incluirAsistencia ? data.filter((e) => e.estado === "baja") : [];
   const flags = await Promise.all(inactivos.map((e) => tieneAsistencia(orgId, e.id)));
   const conAsistencia = new Set(inactivos.filter((_, i) => flags[i]).map((e) => e.id));
 
